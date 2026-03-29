@@ -1,0 +1,8 @@
+# 빌드 결과물 (Bela 보드용 실행 파일 및 중간 생성물)
+build/
+*.o
+*.d
+
+# OS 및 에디터 관련 파일
+.DS_Store
+.vscode/

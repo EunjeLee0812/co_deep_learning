@@ -1,32 +1,33 @@
-Trill bar한개와 벨라보드를 연결하고, Trill bar의 센서값을 실시간으로 노트북(파이썬) 모니터에 출력하면서 csv에도 데이터를 저장하는 example.py입니다.
+# Tactor
+Tactor is a musical touch interface with AI to give the user the experience of various musical techniques. We have used Bela platform to get low latency.
 
-ㅡ 벨라보드에서ㅡ
+## Demo
 
-0. bela 보드를 dev버전으로 업그레이드? 합니다. dev도 최신버전이 있어서 최신버전으로 써줘야 모든 함수가 다 들어있어서 에러가 안납니다.
-  - pybela의 함수들이 기본 버전이 아니라 dev 개발자 bela버전에서만 지원하는 함수들을 사용해서 업그레이드를 해줘야합니다.
+## Installation and set up
+
+### Installing pybela
+#### 1. Python 3.12 이하
+pip을 통해 설치 가능
+```
+pip install pybela
+```
+#### 2. Python 3.13 이상
+uv 등을 통해 Python 3.12 이하의 가상 환경을 구축한 후 해당 환경에서 pybela 설치 및 코드 실행
+```
+uv venv --python 3.12
+.venv\Scripts\activate
+uv pip install pybela
+```
 
 
-1. bela_code에 있는 코드 세가지 render.cpp, Watcher.h, Watcher.cpp들을 bela보드의 프로젝트 폴더에 같은 계층에 넣고, render.cpp를 빌드,실행시킵니다.
-
-+) 20260507, 06:14 기준 현재 올려둔 render.cpp는 루프문은 약간 수정버전이라 작동을 보장하지 못합니다.
-   이전 버전 old_render.cpp는 영현이형 노트북으로도 실행성공한 보장된 render.cpp이므로 수정버전이 안되면 old버전 주석 해제하고 써보세요.
-
-ㅡ노트북 파이썬에서ㅡ
-
-2. pybela가 작동하는 폴더에 가서 example.py를 python3 example.py 명령어로 터미널에서 실행시키면 터미널에 실시간으로 데이터가 보이고, 전체결과도 csv에 저장됩니다.
-  - 사용할 폴더에서 pybela가 연결돼있는걸 확인하셔야합니다
-
-
-* example.py 다운받아 실행하기 외에 다른 작업은 필요하지 않습니다. zip파일은 그냥 올려둔..거라 무시하시면 됩니다. pybela가 되는 폴더에서 exampl.py만 가져오셔서 실행하면 끝입니다.
-
-ㅡㅡㅡㅡㅡㅡ출력 데이터ㅡㅡㅡㅡㅡㅡㅡㅡ
->> 검증 해주세요. AI와 함께한 추측입니다
-처음에는 가로축이 트릴바의 센서축이라 생각했는데, 행마다 변화가 불규칙적이고, 터치세기가 따로 데이터로 있는 걸 봐서 시간축이 맞는거 같습니다.
-
-[시간, 데이터유형, 실제 데이터] 순이고
-데이터 유형은 터치 위치, 터치 세기? 인데
-
-터치 위치: 트릴바의 왼쪽?을 0, 오른쪽?을 1로두고 현재 시점에서의 터치위치를 나타냅니다.
-
-한 행마다 1024개 (현재는 파이썬에서 1행, 17행, 33행 .. 만 읽어오게해서 1024/16 = 64개만 있습니다.)의 샘플들이 나오는데
-0.00001초때의 위치 , 0.00002초때의 위치 , 0.00003초 때의 위치, 0.00004초 때의 위치 ... 이런식으로 1024개가 나오는거 같습니다.
+co_deep_learning/
+├── README.md
+├── requirements.txt
+│
+├── bela/
+│   ├── render.cpp
+│   ├── Watcher.h
+│   └── Watcher.cpp
+│
+├── notebooks/
+└── src/

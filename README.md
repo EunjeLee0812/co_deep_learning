@@ -19,7 +19,7 @@ uv venv --python 3.12
 uv pip install pybela
 ```
 
-
+## File Structure
 ```
 co_deep_learning/
 ├── README.md
@@ -30,6 +30,6 @@ co_deep_learning/
 │   ├── Watcher.h
 │   └── Watcher.cpp
 │
-├── notebooks/
 └── src/
+    └── example.py
 ```

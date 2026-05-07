@@ -15,10 +15,14 @@ cd co_deep_learning
 
 ==============================================================
 
-[2단계] 파이썬 가상환경 생성 및 실행
-다른 프로젝트와의 충돌을 막기 위해 독립된 환경을 만듭니다. (맥/리눅스 기준)
+[2단계] 파이썬 가상환경 생성 및 실행 (⚠️ 중요: Python 3.10 또는 3.11 권장)
+pybela 라이브러리는 너무 최신 버전의 파이썬(3.12 이상)에서는 에러가 발생합니다.
+반드시 Python 3.10 또는 3.11 버전으로 가상환경을 만들어야 합니다.
 
-python3 -m venv venv
+안정적인 파이썬 버전(예: 3.10)으로 가상환경(venv)을 생성합니다.
+python3.10 -m venv venv
+
+가상환경을 켭니다. (맥/리눅스 기준)
 source venv/bin/activate
 
 (※ 윈도우 사용자는 source 대신 .\venv\Scripts\activate 를 입력하세요)
@@ -27,7 +31,7 @@ source venv/bin/activate
 
 [3단계] 필수 라이브러리 설치
 터미널 입력창 왼쪽에 (venv)가 떠 있는 상태에서 아래 명령어를 입력하세요.
-
+source venv/bin/activate
 pip install --upgrade pip
 pip install pybela notebook pandas matplotlib
 
@@ -59,17 +63,22 @@ cd ..
 ==============================================================
 
 [6단계] 스트리밍 코드 벨라에 넣고 실행하기
-Watcher 라이브러리가 포함된 코드를 벨라로 전송하고 백그라운드에서 실행합니다.
+깃허브에서 다운받은 내 노트북의 최신 코드를 벨라 보드로 전송하여 실행합니다.
+(벨라 IDE 웹 화면을 켤 필요 없이 터미널에서 모두 끝납니다.)
 
+내 노트북 코드를 벨라 보드로 복사 (rsync 명령어):
 rsync -rvL ./bela/trill_streamer root@bela.local:Bela/projects
+
+벨라 실행 (기존 프로세스 중지 및 새 코드 켜기):
 ssh root@bela.local "make -C /root/Bela stop PROJECT=trill_streamer run"
 
-(터미널에 Running... 이라는 문구가 뜨면 성공입니다. 이 터미널 창은 끄지 말고 켜두세요)
+(터미널에 'Running...' 이라는 문구가 뜨면 데이터 쏠 준비가 완료된 것입니다.
+파이썬에서 데이터를 받는 동안 이 터미널 창은 절대 끄지 말고 켜두세요!)
 
 ==============================================================
 
 [7단계] 주피터 노트북 실행
-터미널 탭을 하나 새로 엽니다. 가상환경을 다시 켜준 뒤 주피터 노트북을 엽니다.
+터미널 탭을 하나 새로 엽니다(맥북 : cmd + tab). 가상환경을 다시 켜준 뒤 주피터 노트북을 엽니다.
 
 source venv/bin/activate
 jupyter notebook

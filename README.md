@@ -20,6 +20,7 @@ uv pip install pybela
 ```
 
 
+```
 co_deep_learning/
 ├── README.md
 ├── requirements.txt
@@ -31,3 +32,4 @@ co_deep_learning/
 │
 ├── notebooks/
 └── src/
+```

@@ -7,6 +7,33 @@ Co-Deep Learning: Bela & PyBela 실시간 데이터 스트리밍 세팅 가이�
 
 ==============================================================
 
+[Docker로 환경 세팅하기] ← 추천: 모든 OS에서 동일한 환경 보장
+
+Docker Desktop이 설치되어 있다면 아래 3줄이면 끝납니다.
+
+  git clone https://github.com/EunjeLee0812/co_deep_learning.git
+  cd co_deep_learning
+  docker compose up --build
+
+브라우저에서 http://localhost:8888 을 열면 Jupyter Notebook이 실행됩니다.
+(비밀번호 없이 바로 접속됩니다.)
+
+코드를 수정하면 컨테이너를 재시작하지 않아도 바로 반영됩니다.
+
+⚠️ Bela 보드 USB 연결이 필요한 경우 (라이브 스트리밍)
+  - Linux: docker-compose.yml 내 network_mode: host 주석을 해제하세요.
+  - Windows/Mac: docker-compose.yml 파일 하단 주석을 참고하거나,
+    호스트 터미널에서 직접 pybela를 실행하세요.
+
+컨테이너 종료:
+  docker compose down
+
+==============================================================
+
+[venv로 직접 세팅하기] ← Docker 없이 로컬에 설치할 경우
+
+==============================================================
+
 [1단계] 프로젝트 전체 코드 다운로드
 작업을 진행할 폴더를 열고, 터미널에 아래 두 줄을 순서대로 입력하세요.
 

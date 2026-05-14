@@ -1,0 +1,6 @@
+pybela==2.0.3
+notebook
+pandas
+matplotlib
+numpy
+ipywidgets

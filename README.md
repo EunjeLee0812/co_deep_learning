@@ -11,9 +11,11 @@ Co-Deep Learning: Bela & PyBela 실시간 데이터 스트리밍 세팅 가이�
 
 Docker Desktop이 설치되어 있다면 아래 3줄이면 끝납니다.
 
+```
   git clone https://github.com/EunjeLee0812/co_deep_learning.git
   cd co_deep_learning
   docker compose up --build
+```
 
 브라우저에서 http://localhost:8888 을 열면 Jupyter Notebook이 실행됩니다.
 (비밀번호 없이 바로 접속됩니다.)
@@ -26,7 +28,9 @@ Docker Desktop이 설치되어 있다면 아래 3줄이면 끝납니다.
     호스트 터미널에서 직접 pybela를 실행하세요.
 
 컨테이너 종료:
+```
   docker compose down
+```
 
 ==============================================================
 

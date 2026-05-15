@@ -7,18 +7,24 @@ Co-Deep Learning: Bela & PyBela 실시간 데이터 스트리밍 세팅 가이�
 
 ==============================================================
 
-[Docker로 환경 세팅하기] ← 추천: 모든 OS에서 동일한 환경 보장
+[Docker + VS Code로 환경 세팅하기] ← 추천: 모든 OS에서 동일한 환경 보장
 
-Docker Desktop이 설치되어 있다면 아래 3줄이면 끝납니다.
+[사전 준비] 아래 두 가지를 설치하세요. (최초 1회)
+  1. Docker Desktop: https://www.docker.com/products/docker-desktop/
+  2. VS Code 확장 "Dev Containers" (ms-vscode-remote.remote-containers)
+     VS Code 좌측 확장 탭 → "Dev Containers" 검색 → 설치
+
+[실행 방법]
 
 ```
   git clone https://github.com/EunjeLee0812/co_deep_learning.git
-  cd co_deep_learning
-  docker compose up --build
 ```
 
-브라우저에서 http://localhost:8888 을 열면 Jupyter Notebook이 실행됩니다.
-(비밀번호 없이 바로 접속됩니다.)
+1. Docker Desktop을 실행합니다.
+2. VS Code에서 co_deep_learning 폴더를 엽니다.
+3. 좌하단 파란 버튼 (><) 클릭 → "Reopen in Container" 선택
+   (최초 1회는 이미지 빌드로 수 분 소요됩니다. 이후에는 바로 열립니다.)
+4. .ipynb 파일을 열면 바로 셀을 실행할 수 있습니다.
 
 코드를 수정하면 컨테이너를 재시작하지 않아도 바로 반영됩니다.
 
@@ -26,11 +32,6 @@ Docker Desktop이 설치되어 있다면 아래 3줄이면 끝납니다.
   - Linux: docker-compose.yml 내 network_mode: host 주석을 해제하세요.
   - Windows/Mac: docker-compose.yml 파일 하단 주석을 참고하거나,
     호스트 터미널에서 직접 pybela를 실행하세요.
-
-컨테이너 종료:
-```
-  docker compose down
-```
 
 ==============================================================
 

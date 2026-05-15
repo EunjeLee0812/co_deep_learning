@@ -2,8 +2,6 @@ services:
   jupyter:
     build: .
     container_name: co_deep_learning
-    ports:
-      - "8888:8888"
     volumes:
       # 프로젝트 코드를 컨테이너 /workspace 에 실시간 마운트
       - .:/workspace
@@ -11,11 +9,6 @@ services:
       # Bela 보드 IP (기본값: 192.168.7.2). 변경하려면 .env 파일에 BELA_IP=<주소> 를 추가하세요.
       - BELA_IP=${BELA_IP:-192.168.7.2}
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8888"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
     # ─── Bela 보드 네트워크 연결 설정 ────────────────────────────────────
     #

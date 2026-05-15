@@ -1,5 +1,5 @@
 pybela==2.0.3
-notebook
+ipykernel
 pandas
 matplotlib
 numpy

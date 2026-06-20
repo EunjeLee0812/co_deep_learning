@@ -1,119 +1,39 @@
-==============================================================
+# (프로젝트명) — Bela 기반 음악 컴퓨팅 악기
 
-Co-Deep Learning: Bela & PyBela 실시간 데이터 스트리밍 세팅 가이드
+디스플레이로 컨트롤하고, Bela에서 실시간으로 소리를 생성/처리하는 악기 프로젝트.
 
-이 가이드는 팀원들이 Bela 보드와 Python 환경을 처음 세팅할 때
-명령어를 순서대로 복사해서 실행할 수 있도록 작성되었습니다.
+## 구조 한눈에 보기
 
-==============================================================
+| 폴더 | 역할 (네가 말한 파트) |
+|------|----------------------|
+| `bela/instruments/` | 악기 파트 — 음원/보이스(오실레이터, 신스, 샘플러) |
+| `bela/effects/` | 음향 이펙터 파트 — 리버브, 딜레이, 필터 등 |
+| `bela/synthesis/` | 소리 생성 파트 — DSP 엔진, 보이스 관리, 믹서 |
+| `bela/hardware/` | 하드웨어 정보 가져오는 파트 — 센서/ADC/GPIO/MIDI 입력 |
+| `bela/comm/` | 디스플레이↔Bela 통신 (Bela 수신측) |
+| `display/` | 디스플레이 파트 — UI / 컨트롤(설정·이펙터 파라미터) |
+| `display/comm/` | 디스플레이↔Bela 통신 (디스플레이 송신측) |
+| `shared/protocol/` | 양쪽이 공유하는 통신 프로토콜 정의 (파라미터 ID, 메시지 포맷) |
+| `bela/core/` | 공통 유틸 (링버퍼, 파라미터 타입, 상수) |
+| `tools/` | 빌드/배포 스크립트 |
+| `tests/` | 테스트 |
+| `docs/` | 설계 문서 |
+| `legacy/` | 과거 파일 임시 보관 → 정리 후 위 폴더로 이동 |
 
-[Docker + VS Code로 환경 세팅하기] ← 추천: 모든 OS에서 동일한 환경 보장
-
-[사전 준비] 아래 두 가지를 설치하세요. (최초 1회)
-  1. Docker Desktop: https://www.docker.com/products/docker-desktop/
-  2. VS Code 확장 "Dev Containers" (ms-vscode-remote.remote-containers)
-     VS Code 좌측 확장 탭 → "Dev Containers" 검색 → 설치
-
-[실행 방법]
+## 데이터 흐름 (대략)
 
 ```
-  git clone https://github.com/EunjeLee0812/co_deep_learning.git
+[하드웨어 입력] ─┐
+                 ├─> [synthesis 엔진] ─> [instruments] ─> [effects] ─> 오디오 출력
+[디스플레이] ─comm─┘   (파라미터 제어)
 ```
 
-1. Docker Desktop을 실행합니다.
-2. VS Code에서 co_deep_learning 폴더를 엽니다.
-3. 좌하단 파란 버튼 (><) 클릭 → "Reopen in Container" 선택
-   (최초 1회는 이미지 빌드로 수 분 소요됩니다. 이후에는 바로 열립니다.)
-4. .ipynb 파일을 열면 바로 셀을 실행할 수 있습니다.
+## 시작하기
+- Bela 측: `bela/` 를 Bela 보드에 올려 빌드 (render.cpp 가 진입점)
+- 디스플레이 측: `display/` (스택 미정 — README 참고)
+- 통신 규약: `docs/communication-protocol.md`
 
-코드를 수정하면 컨테이너를 재시작하지 않아도 바로 반영됩니다.
-
-⚠️ Bela 보드 USB 연결이 필요한 경우 (라이브 스트리밍)
-  - Linux: docker-compose.yml 내 network_mode: host 주석을 해제하세요.
-  - Windows/Mac: docker-compose.yml 파일 하단 주석을 참고하거나,
-    호스트 터미널에서 직접 pybela를 실행하세요.
-
-==============================================================
-
-[venv로 직접 세팅하기] ← Docker 없이 로컬에 설치할 경우
-
-==============================================================
-
-[1단계] 프로젝트 전체 코드 다운로드
-작업을 진행할 폴더를 열고, 터미널에 아래 두 줄을 순서대로 입력하세요.
-
-git clone https://github.com/EunjeLee0812/co_deep_learning.git
-cd co_deep_learning
-
-==============================================================
-
-[2단계] 파이썬 가상환경 생성 및 실행 (⚠️ 중요: Python 3.10 또는 3.11 권장)
-pybela 라이브러리는 너무 최신 버전의 파이썬(3.12 이상)에서는 에러가 발생합니다.
-반드시 Python 3.10 또는 3.11 버전으로 가상환경을 만들어야 합니다.
-
-안정적인 파이썬 버전(예: 3.10)으로 가상환경(venv)을 생성합니다.
-python3.10 -m venv venv
-
-가상환경을 켭니다. (맥/리눅스 기준)
-source venv/bin/activate
-
-(※ 윈도우 사용자는 source 대신 .\venv\Scripts\activate 를 입력하세요)
-
-==============================================================
-
-[3단계] 필수 라이브러리 설치
-터미널 입력창 왼쪽에 (venv)가 떠 있는 상태에서 아래 명령어를 입력하세요.
-source venv/bin/activate
-pip install --upgrade pip
-pip install pybela notebook pandas matplotlib
-
-==============================================================
-
-[4단계] Bela 보드 시간 동기화
-
---> 걍 Bela IDE 연결하면 됨. 아래꺼 무시.
-
-Bela 보드를 컴퓨터에 USB로 연결합니다. 보드의 파란색 LED가 깜빡이기 시작하면
-아래 명령어를 입력하여 컴퓨터의 시계와 Bela의 시계를 맞춥니다.
-(비밀번호를 묻는다면 그냥 엔터를 치세요)
-
-ssh root@bela.local "date -s "date '+%Y%m%d %T %z'""
-
-==============================================================
-
-[5단계] Bela 코어 업데이트
-Bela 펌웨어를 최신 dev 버전으로 업데이트합니다.
-
---> 이미 세팅된 기기라면 건너뛰어도 됩니다
-
-cd bela
-git remote add board root@bela.local:Bela/
-git push -f board dev:tmp
-ssh root@bela.local "cd Bela && git checkout tmp && make -f Makefile.libraries cleanall && make coreclean"
-cd ..
-
-==============================================================
-
-[6단계] 스트리밍 코드 벨라에 넣고 실행하기
-깃허브에서 다운받은 내 노트북의 최신 코드를 벨라 보드로 전송하여 실행합니다.
-(벨라 IDE 웹 화면을 켤 필요 없이 터미널에서 모두 끝납니다.)
-
-내 노트북 코드를 벨라 보드로 복사 (rsync 명령어):
-rsync -rvL ./bela/trill_streamer root@bela.local:Bela/projects
-
-벨라 실행 (기존 프로세스 중지 및 새 코드 켜기):
-ssh root@bela.local "make -C /root/Bela stop PROJECT=trill_streamer run"
-
-(터미널에 'Running...' 이라는 문구가 뜨면 데이터 쏠 준비가 완료된 것입니다.
-파이썬에서 데이터를 받는 동안 이 터미널 창은 절대 끄지 말고 켜두세요!)
-
-==============================================================
-
-[7단계] 주피터 노트북 실행
-터미널 탭을 하나 새로 엽니다(맥북 : cmd + tab). 가상환경을 다시 켜준 뒤 주피터 노트북을 엽니다.
-
-source venv/bin/activate
-jupyter notebook
-
-==============================================================
-
+## TODO (상세 기능은 추후 확정)
+- [ ] 통신 프로토콜 확정 (`shared/protocol/`)
+- [ ] 각 파트 인터페이스 → 구현
+- [ ] legacy 파일 정리

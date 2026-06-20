@@ -1,0 +1,6 @@
+name=sndfile
+description=A convenience wrapper for libsndfile.
+examples=Gui/sequencer, Audio/sample-streamer-multi
+license=LGPL 3.0
+LDFLAGS=
+LDLIBS=-lsndfile

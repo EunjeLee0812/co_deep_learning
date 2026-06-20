@@ -1,0 +1,7 @@
+{
+  "_comment": "디스플레이와 Bela 가 공유하는 파라미터 정의. 코드 생성/검증의 단일 출처(single source of truth)로 쓸 수 있음.",
+  "params": [
+    { "id": 0, "name": "masterVolume", "min": 0.0, "max": 1.0, "default": 0.8, "target": "synthesis" },
+    { "id": 1, "name": "reverbMix",    "min": 0.0, "max": 1.0, "default": 0.2, "target": "effects" }
+  ]
+}

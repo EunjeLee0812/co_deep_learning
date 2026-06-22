@@ -1,2 +1,0 @@
-Python=3.12
-pybela=2.0.3

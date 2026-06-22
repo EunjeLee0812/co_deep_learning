@@ -1,7 +1,0 @@
-[
-  "digital-input",
-  "digital-output",
-  "level-meter",
-  "bicolor-LEDs",
-  "synchronous-gpio"
-]

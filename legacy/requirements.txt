@@ -1,6 +1,0 @@
-pybela==2.0.3
-ipykernel
-pandas
-matplotlib
-numpy
-ipywidgets

@@ -39,10 +39,21 @@ public:
             if (f.ringActive) lastRingPos_ = f.ringPos;
 
             Quality   q    = qualityFromBar(f.qualityActive ? f.qualityPos : 0.0f);
-            ChordType type = chordTypeFromBar(f.complexityActive ? f.complexityPos : 0.16f);
+            float     cpos = f.complexityActive ? f.complexityPos : 0.16f;
+            ChordType type = chordTypeFromBar(cpos);
             float     width= f.voicingPos;     // 0(좁음)~1(넓음)
 
-            Chord c = buildChord(rootPc, q, type, width, prev_);
+            // 복잡도 바 최상단(Dom7Tension 구간)을 0..1 '모호도'로 재매핑.
+            // 아래쪽은 이산 코드 타입, 위쪽은 모호도 파라미터로 동작.
+            float ambiguity = 0.5f;
+            if (type == ChordType::Dom7Tension) {
+                const float lo = 5.0f / 6.0f;          // 6등분 중 마지막 칸 시작점
+                ambiguity = (cpos - lo) / (1.0f - lo);
+                if (ambiguity < 0.0f) ambiguity = 0.0f;
+                if (ambiguity > 1.0f) ambiguity = 1.0f;
+            }
+
+            Chord c = buildChord(rootPc, q, type, width, prev_, ambiguity);
             outChord    = c;
             outVelocity = mapStrengthToVelocity(f.voicingStrength);
 

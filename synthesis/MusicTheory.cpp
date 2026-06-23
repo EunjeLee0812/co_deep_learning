@@ -1,5 +1,6 @@
-// MusicTheory.cpp — 코드 빌드 + 텐션 선택 + 보이싱 펼치기
+// MusicTheory.cpp — 코드 빌드 + 텐션 선택(표+티켓 방식) + 보이싱 펼치기
 #include "MusicTheory.h"
+#include "CompTables.h"      // ★추가: 컴핑 확률 표(kBase / kClash / kCandOffset)
 #include <algorithm>
 
 namespace syn {
@@ -7,6 +8,16 @@ namespace {
 
 inline int clampi(int v, int lo, int hi) { return std::min(hi, std::max(lo, v)); }
 inline bool pcInMask(int pc, unsigned short mask) { return (mask >> (pc % 12)) & 1u; }
+
+// ── 가벼운 난수 (실시간 안전, 헤더 의존 없음) ────────────────────────────────
+// xorshift32. setup 때 시드 한 번. render 안에서 새로 만들 필요 없음.
+inline unsigned int& rngState() { static unsigned int s = 0x1234567u; return s; }
+inline float nextRand01() {
+    unsigned int x = rngState();
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    rngState() = x;
+    return (x & 0xFFFFFF) / 16777216.0f;   // 0..1
+}
 
 // 퀄리티별 3화음 인터벌(반음, 루트 기준)
 void triadOffsets(Quality q, int out[3], int& n) {
@@ -18,96 +29,119 @@ void triadOffsets(Quality q, int out[3], int& n) {
     }
 }
 
-// ── 텐션 선택 ───────────────────────────────────────────────────────────────
-// 도미넌트7 코드 위에 얹을 텐션을 "직전 코드 문맥"을 보고 고른다.
-// 후보(루트 기준 반음, 상부구조 >12): ♭9=13, 9=14, ♯9=15, ♯11=18, ♭13=20, 13=21
-//
-// 점수 규칙(높을수록 선택):
-//  (1) 공통음 유지: 텐션의 피치클래스가 "직전 코드"에 있었으면 +2.0
-//      → 연속한 코드가 음을 공유 → 흐릿하고 모호한(jazzy) 연결.
-//  (2) 루트 진행: 직전→현재 루트가 4도 상행(=완전5도 하행, V→I 해결)이면 변형텐션
-//      (♭9/♯9/♭13)에 +1.5 (긴장→해결 느낌). 순차/그 외엔 자연텐션(9/13/♯11)에 +1.0.
-//  (3) 첫 코드(문맥 없음): 9 와 13 에 약한 가산 (+0.8) — 부드럽고 색채감 있는 기본값.
-//  (4) 미세 기본 선호(결정성): 9>13>♯11>♭9>♯9>♭13.
-//
-// nTensions = 1 + round(voicingWidth*2) → 1~3개. 보이싱이 넓을수록 텐션을 더 노출.
-int chooseTensions(int rootPc, const PrevChordContext& prev,
-                   float voicingWidth, int outOffsets[3]) {
-    struct Cand { int off; float base; };
-    // base = 미세 기본 선호 (4)
-    const Cand cands[6] = {
-        {14, 0.60f}, // 9
-        {21, 0.50f}, // 13
-        {18, 0.40f}, // #11
-        {13, 0.30f}, // b9
-        {15, 0.20f}, // #9
-        {20, 0.10f}, // b13
-    };
-    const bool altered[6] = { false,false,false, true,true,true }; // b9,#9,b13 = 변형
+// 후보 오프셋 → 후보 인덱스(없으면 -1)
+inline int candIndexOf(int off) {
+    for (int i = 0; i < kCompN; ++i) if (kCandOffset[i] == off) return i;
+    return -1;
+}
+// 변형텐션(b9=13, #9=15, b13=20) 여부
+inline bool isAlteredOffset(int off) { return off==13 || off==15 || off==20; }
+// 자연텐션(9=14, 13=21, #11=18) 여부
+inline bool isNaturalOffset(int off) { return off==14 || off==21 || off==18; }
 
-    // 루트 진행 판정
-    bool resolving = false; // V→I (4도 상행 = +5 반음)
-    bool stepwise  = false;
+// ── 텐션 선택 (표 + 티켓 방식) ───────────────────────────────────────────────
+// 옛 chooseTensions 의 손튜닝 점수표를 "데이터로 만든 확률표(kBase/kClash)"와
+// "이전 코드 공통음(prev.pcMask)" 로 대체한 버전.
+//
+//  티켓 = pow(기본확률, sharpness)
+//         × (이전 코드와 공통음이면 보너스)
+//         × (해결 진행이면 변형텐션 / 그 외엔 자연텐션 보너스)
+//         × (이미 고른 음들과의 충돌 정도 kClash)
+//  → 티켓 비례 룰렛으로 하나 뽑고, 뽑을 때마다 다시 계산해서 반복.
+//
+//  ambiguity(0=또렷,1=모호) 가 두 가지를 정함:
+//    - 몇 개나 더 얹을지(모호할수록 많이)
+//    - sharpness(또렷할수록 큼 → 높은확률 음에 몰림 / 모호할수록 평탄)
+//
+//  fixedOffs/nFixed : buildChord 가 이미 놓은 화음 구성음(루트·3도·5도·b7).
+//                     이것들과의 충돌도 티켓 계산에 반영한다.
+int chooseTensions(int rootPc, const PrevChordContext& prev,
+                   const int* fixedOffs, int nFixed,
+                   float voicingWidth, float ambiguity,
+                   int outOffsets[], int maxOut) {
+    // 0) 이미 놓인 음 표시(충돌 계산용)
+    bool chosen[kCompN] = { false };
+    for (int k = 0; k < nFixed; ++k) {
+        int ci = candIndexOf(fixedOffs[k]);
+        if (ci >= 0) chosen[ci] = true;
+    }
+
+    // 1) 루트 진행 판정 (해결 V→I = 4도 상행 = +5 반음)
+    bool resolving = false;
     if (prev.valid && prev.rootPc >= 0) {
         int motion = ((rootPc - prev.rootPc) % 12 + 12) % 12;
         resolving = (motion == 5);
-        stepwise  = (motion == 2 || motion == 10);
     }
 
-    float score[6];
-    for (int i = 0; i < 6; ++i) {
-        float s = cands[i].base;
-        int pc = (rootPc + cands[i].off) % 12;
-        if (prev.valid && pcInMask(pc, prev.pcMask)) s += 2.0f;          // (1) 공통음
-        if (prev.valid) {
-            if (resolving &&  altered[i]) s += 1.5f;                     // (2) 해결→변형
-            if ((stepwise || !resolving) && !altered[i]) s += 1.0f;      //     그외→자연
-        } else {
-            if (cands[i].off == 14 || cands[i].off == 21) s += 0.8f;     // (3) 첫코드 기본
+    // 2) ambiguity → 개수 / 날카로움
+    if (ambiguity < 0.0f) ambiguity = 0.0f;
+    if (ambiguity > 1.0f) ambiguity = 1.0f;
+    int   nWanted   = clampi(1 + (int)std::lround(ambiguity*2.0f + voicingWidth*1.0f), 1, 4);
+    float sharpness = 1.0f + (1.0f - ambiguity) * 3.0f;
+
+    int nOut = 0;
+    for (int pick = 0; pick < nWanted && nOut < maxOut; ++pick) {
+        // (a) 후보별 티켓 계산
+        float tickets[kCompN] = { 0 };
+        float total = 0.0f;
+        for (int i = 0; i < kCompN; ++i) {
+            if (chosen[i]) continue;
+            int off = kCandOffset[i];
+            if (off < 13) continue;            // 텐션(>=13)만 추가 대상
+            if (kBase[i] <= 0.0f) continue;
+
+            float t = std::pow(kBase[i], sharpness);
+
+            // 공통음 보너스: 이 음의 피치클래스가 직전 코드에 있었으면 ↑
+            int pc = (rootPc + off) % 12;
+            if (prev.valid && pcInMask(pc, prev.pcMask)) t *= 2.5f;
+
+            // 진행 보너스
+            if (prev.valid) {
+                if (resolving && isAlteredOffset(off)) t *= 1.5f;
+                if (!resolving && isNaturalOffset(off)) t *= 1.2f;
+            }
+
+            // 이미 고른 음들과의 충돌
+            for (int j = 0; j < kCompN; ++j)
+                if (chosen[j]) t *= kClash[i][j];
+
+            tickets[i] = t;
+            total += t;
         }
-        score[i] = s;
-    }
+        if (total <= 0.0f) break;
 
-    int nWanted = clampi(1 + (int)std::lround(voicingWidth * 2.0f), 1, 3);
-
-    // 점수 상위 nWanted 개 선택(중복 피치클래스 방지)
-    int n = 0;
-    bool used[6] = { false,false,false,false,false,false };
-    unsigned short chosenPc = 0;
-    for (int pick = 0; pick < nWanted; ++pick) {
-        int best = -1; float bestScore = -1e9f;
-        for (int i = 0; i < 6; ++i) {
-            if (used[i]) continue;
-            int pc = (rootPc + cands[i].off) % 12;
-            if ((chosenPc >> pc) & 1u) continue; // 같은 피치클래스 텐션 중복 방지
-            if (score[i] > bestScore) { bestScore = score[i]; best = i; }
+        // (b) 티켓 비례 룰렛
+        float draw = nextRand01() * total;
+        float acc = 0.0f; int winner = -1;
+        for (int i = 0; i < kCompN; ++i) {
+            if (tickets[i] <= 0.0f) continue;
+            acc += tickets[i];
+            if (draw <= acc) { winner = i; break; }
         }
-        if (best < 0) break;
-        used[best] = true;
-        chosenPc |= (unsigned short)(1u << ((rootPc + cands[best].off) % 12));
-        outOffsets[n++] = cands[best].off;
+        if (winner < 0) break;
+
+        chosen[winner] = true;
+        outOffsets[nOut++] = kCandOffset[winner];
     }
-    std::sort(outOffsets, outOffsets + n);
-    return n;
+
+    std::sort(outOffsets, outOffsets + nOut);
+    return nOut;
 }
 
-// ── 보이싱 펼치기 ───────────────────────────────────────────────────────────
-// close-position 오프셋 목록 → 실제 MIDI 노트. width 로 옥타브 배치를 연다.
-//  - width↑ : 텐션은 한 옥타브 위로 띄우고(상부구조), 안쪽 성부를 벌려 오픈 보이싱.
-//  - 루트(오프셋 0)는 항상 최저 베이스로 고정(서브 오실레이터가 따라감).
+// ── 보이싱 펼치기 (변경 없음) ────────────────────────────────────────────────
 void spread(int bassMidi, const int* offs, int nOff, float width, Chord& out) {
     out.clear();
     for (int k = 0; k < nOff; ++k) {
         int off  = offs[k];
         int lift = 0;
-        bool isTension = (off >= 13);                 // 상부구조 텐션
-        if (isTension && width >= 0.33f) lift += 12;  // 넓어지면 텐션을 위로 띄움
-        if (k >= 2 && (k % 2 == 0) && width >= 0.66f) lift += 12; // 안쪽 성부 오픈
+        bool isTension = (off >= 13);
+        if (isTension && width >= 0.33f) lift += 12;
+        if (k >= 2 && (k % 2 == 0) && width >= 0.66f) lift += 12;
         int midi = bassMidi + off + lift;
-        while (midi > 96) midi -= 12;                 // 음역 클램프
+        while (midi > 96) midi -= 12;
         out.add(midi);
     }
-    // 정렬 + 정확히 같은 MIDI 중복 제거
     std::sort(out.notes.begin(), out.notes.begin() + out.count);
     int w = 0;
     for (int r = 0; r < out.count; ++r)
@@ -119,9 +153,8 @@ void spread(int bassMidi, const int* offs, int nOff, float width, Chord& out) {
 } // namespace
 
 int rootPcFromRing(float ringPos) {
-    // 0..1 을 12세그먼트로. 0=12시. 세그먼트 i 의 피치클래스 = (i*7)%12.
-    float p = ringPos - std::floor(ringPos);            // wrap to 0..1
-    int seg = (int)std::lround(p * 12.0f) % 12;          // 가장 가까운 세그먼트
+    float p = ringPos - std::floor(ringPos);
+    int seg = (int)std::lround(p * 12.0f) % 12;
     if (seg < 0) seg += 12;
     return (seg * 7) % 12;
 }
@@ -137,26 +170,29 @@ ChordType chordTypeFromBar(float pos) {
 }
 
 Chord buildChord(int rootPc, Quality q, ChordType type, float voicingWidth,
-                 const PrevChordContext& prev, int octaveBase) {
-    // 1) close-position 오프셋 목록 구성
+                 const PrevChordContext& prev, float ambiguity, int octaveBase) {
     int offs[kMaxChordNotes];
     int n = 0;
 
     if (type == ChordType::Power) {
-        offs[n++] = 0;  // 루트
-        offs[n++] = 7;  // 5도
-        if (voicingWidth >= 0.5f) offs[n++] = 12; // 넓으면 루트 옥타브(파워코드 옥타브)
+        offs[n++] = 0;
+        offs[n++] = 7;
+        if (voicingWidth >= 0.5f) offs[n++] = 12;
     } else {
         int tri[3], tn; triadOffsets(q, tri, tn);
         for (int i = 0; i < tn; ++i) offs[n++] = tri[i];
 
         switch (type) {
-            case ChordType::Add9: offs[n++] = 14; break;             // +9
-            case ChordType::Maj7: offs[n++] = 11; break;             // +장7
-            case ChordType::Dom7: offs[n++] = 10; break;             // +단7(도미넌트)
+            case ChordType::Add9: offs[n++] = 14; break;
+            case ChordType::Maj7: offs[n++] = 11; break;
+            case ChordType::Dom7: offs[n++] = 10; break;
             case ChordType::Dom7Tension: {
-                offs[n++] = 10;                                       // 단7
-                int t[3]; int tnum = chooseTensions(rootPc, prev, voicingWidth, t);
+                offs[n++] = 10;                                  // 단7
+                int nFixed = n;                                  // 여기까지가 고정 구성음
+                int t[kMaxChordNotes];
+                int tnum = chooseTensions(rootPc, prev, offs, nFixed,
+                                          voicingWidth, ambiguity,
+                                          t, kMaxChordNotes - n);
                 for (int i = 0; i < tnum && n < kMaxChordNotes; ++i) offs[n++] = t[i];
                 break;
             }
@@ -164,10 +200,7 @@ Chord buildChord(int rootPc, Quality q, ChordType type, float voicingWidth,
         }
     }
 
-    // 2) 베이스 MIDI: octaveBase 옥타브에 루트 피치클래스 배치
     int bassMidi = octaveBase + rootPc;
-
-    // 3) 펼치기
     Chord c;
     spread(bassMidi, offs, n, voicingWidth, c);
     c.rootPc = rootPc;

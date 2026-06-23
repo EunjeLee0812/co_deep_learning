@@ -79,6 +79,7 @@ Chord buildChord(int rootPc,
                  ChordType type,
                  float voicingWidth,
                  const PrevChordContext& prev,
+                 float ambiguity = 0.5f,   // 0=또렷, 1=모호 (복잡도 바 상단)
                  int octaveBase = 48);
 
 // 빌드된 코드로부터 다음 호출에 넘길 직전 문맥을 만든다.

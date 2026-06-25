@@ -96,4 +96,4 @@ void render(BelaContext* context, void*) {
 원본코드에서 수정한 것들:
   hardwareinput.cpp: 하드웨어 구성에 맞게 핀 번호 수정, process함수 전체 교체   >> 스위치는 아직 수정하지 못함.
   hardwareinput.h: 멀티플렉서를 위한 변수 몇개 선언
-  trillinput.cpp: 트릴 주소 수정 및 입력 받아오기(주석해제)
+  trillinput.cpp: 트릴 주소 수정 및 입력 받아오기(주석해제) < 수정된 트릴.h기반

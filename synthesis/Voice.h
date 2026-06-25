@@ -1,43 +1,65 @@
-// Voice.h — 한 음을 내는 보이스 (Oscillator + Filter + Envelope 조립)
+// Voice.h — 연주 바 1개가 내는 "연속 피치" 보이스 (Oscillator+Filter+Envelope)
+// ───────────────────────────────────────────────────────────────────────────
+// [변경] 구버전은 코드 노트(정수 MIDI)에 보이스를 동적 할당했지만, 신버전은
+//   "바 1개 = 보이스 1개" 로 고정되고 피치가 바 위치에 따라 연속적으로 변한다.
 //
-// 코드의 노트 하나당 Voice 하나가 할당된다. SynthEngine 이 보이스 풀을 관리하고,
-// 트리거 시 setNote()/gateOn(), 릴리즈 시 gateOff() 를 호출한다.
+// 피치 = (글라이드된 중심음 center) + (즉각 반영 offset)
+//   center : 링(5도권)으로 코드가 바뀌면 변하는 기준음. 짧은 글라이드로 미끄러짐.
+//            → "트릴 링을 슬라이드하면 누르고 있던 음이 미끄러지듯 바뀐다" (스펙)
+//   offset : 바 위치(가운데 기준 ±반음). 글라이드 없이 즉각 = 바이올린처럼 선형 연속.
+//            → "바를 따라 음이 끊김 없이/등간격으로 변한다" (스펙)
 //
-// 모듈레이션:
-//   - 필터 컷오프 = 기준컷오프 * 2^(envAmt*env*EnvOct + lfoAmt*lfo*LfoOct)
-//     (로그=옥타브 도메인에서 변조해야 청감상 자연스러움 — PDF DSP 노트와 동일 정신)
-//   - 진폭 = ADSR 엔벨로프 * 벨로시티
-//   - 서브 오실레이터는 "베이스 보이스"에만 섞어 저음을 두껍게 (스펙 #6)
+//   매 블록:  setTargetCenter(기준음) + setOffset(반음)   ← 엔진이 계산해 전달
+//   터치 ↑ :  gateOn()  (현재 center 를 목표로 스냅 → 첫 터치 swoop 방지)
+//   터치 ↓ :  gateOff()
+//   매 샘플:  process() → center 글라이드 → midiToHz → osc → filter → env
+// ───────────────────────────────────────────────────────────────────────────
 #pragma once
 #include "Oscillator.h"
 #include "Filter.h"
 #include "Envelope.h"
 #include "SynthParams.h"
-#include "MusicTheory.h"
+#include "ChordVoicing.h"   // midiToHz (구 MusicTheory 대체)
+#include <cmath>
 
 namespace syn {
+
+// 루트 전환 글라이드 시간[초]. ★ 미끄러짐 정도 조절은 여기 한 줄.
+//   작을수록(=0.01) 거의 즉각(클릭만 방지), 클수록(0.05~0.1) 또렷한 포르타멘토.
+//   바 위치(offset)는 글라이드 대상이 아니므로 커도 바 추적은 항상 즉각적이다.
+constexpr float kGlideSeconds = 0.020f;
 
 class Voice {
 public:
     void setup(float sampleRate) {
         sampleRate_ = sampleRate;
         osc_.setup(sampleRate);
-        oscDetune_.setup(sampleRate);  // Unison 용 디튠 레이어
+        oscDetune_.setup(sampleRate);   // Unison 디튠 레이어
         filter_.setup(sampleRate);
         env_.setup(sampleRate);
-        active_ = false;
-        hasSub_ = false;
+        setGlideTime(kGlideSeconds);
+        active_ = false; hasSub_ = false;
+        centerMidi_ = centerTarget_ = 60.0f;
+        offset_ = 0.0f;
     }
 
-    // 노트 시작: MIDI 노트로 주파수 설정 + ADSR 적용 + 게이트 온.
-    // isBass=true 면 서브 오실레이터를 섞는다(코드 최저음).
-    void noteOn(int midi, float velocity, const SynthParams& p, bool isBass) {
-        midi_     = midi;
-        velocity_ = velocity;
-        hasSub_   = isBass;
-        float hz  = midiToHz((float)midi);
-        osc_.setFrequency(hz);
-        oscDetune_.setFrequency(hz * 1.004f); // 약 +7센트 디튠(두께)
+    // 글라이드(포르타멘토) 시간상수[초]. 1-pole: cur += (tgt-cur)*alpha.
+    void setGlideTime(float seconds) {
+        glideAlpha_ = (seconds <= 0.0f)
+            ? 1.0f
+            : 1.0f - std::exp(-1.0f / (seconds * sampleRate_));
+    }
+
+    // 이번 블록의 기준음(MIDI, 글라이드 대상) / 바 오프셋(반음, 즉각).
+    void setTargetCenter(float centerMidi) { centerTarget_ = centerMidi; }
+    void setOffset(float semitones)        { offset_       = semitones; }
+
+    // 게이트 온: 현재 기준음을 목표로 스냅(첫 터치 시 미끄러짐 없이 바로) + ADSR.
+    //   isBass=true 면 서브 오실레이터를 섞어 저음을 두껍게(베이스 바 전용).
+    void gateOn(float velocity, const SynthParams& p, bool isBass) {
+        velocity_   = velocity;
+        hasSub_     = isBass;
+        centerMidi_ = centerTarget_;   // 스냅
         env_.setAttack(p.envAttack());
         env_.setDecay(p.envDecay());
         env_.setSustain(p.envSustain());
@@ -48,59 +70,53 @@ public:
     }
 
     void gateOff() { env_.gateOff(); }
-    void kill()    { env_.gateOff(); active_ = false; }
+    bool isActive() const { return active_ && env_.isActive(); }
 
-    bool isActive()  const { return active_ && env_.isActive(); }
-    int  note()      const { return midi_; }
-
-    // 한 샘플 생성. lfoVal 은 엔진이 만든 공유 LFO(-1..1).
+    // 한 샘플 생성. lfoVal 은 엔진의 공유 LFO(-1..1).
     float process(const SynthParams& p, float lfoVal) {
         if (!active_) return 0.0f;
         if (!env_.isActive()) { active_ = false; return 0.0f; }
 
-        // ── 오실레이터 믹스 (saw/square 토글, 둘 다 꺼지면 saw 로 폴백) ──
-        float osc = 0.0f;
-        bool any = false;
-        if (p.sawOn())    { osc += osc_.processSaw();           any = true; }
-        if (p.squareOn()) { osc += osc_.processSquare(0.5f);    any = true; }
-        if (!any)         { osc += osc_.processSaw();                       }
-        else              { osc *= 0.5f; } // 두 파형 동시 시 클리핑 여유
+        // ── 피치: center 만 글라이드, offset 은 즉각 ──
+        centerMidi_ += (centerTarget_ - centerMidi_) * glideAlpha_;
+        const float hz = midiToHz(centerMidi_ + offset_);
+        osc_.setFrequency(hz);
+        oscDetune_.setFrequency(hz * 1.004f);   // 약 +7센트 디튠(두께)
 
-        // Unison: 살짝 디튠된 saw 레이어 추가 → 두꺼운 사운드
-        // (원래 Juno Unison 은 "모든 보이스 같은 음"이지만, 본 악기는 코드 기반이라
-        //  보이스별 디튠 레이어로 해석. 바꾸려면 여기만 수정.)
-        if (p.unison()) osc = 0.7f * osc + 0.5f * oscDetune_.processSaw();
-
-        // 서브 오실레이터(베이스 보이스만): 한 옥타브 아래로 저음 보강
-        if (hasSub_) osc += p.subLevel() * osc_.processSub();
+        // ── 오실레이터 믹스 (saw/square 토글, 둘 다 꺼지면 saw 폴백) ──
+        float osc = 0.0f; bool any = false;
+        if (p.sawOn())    { osc += osc_.processSaw();        any = true; }
+        if (p.squareOn()) { osc += osc_.processSquare(0.5f); any = true; }
+        if (!any)         { osc += osc_.processSaw(); }
+        else              { osc *= 0.5f; }               // 동시 출력 헤드룸
+        if (p.unison())   osc = 0.7f * osc + 0.5f * oscDetune_.processSaw();
+        if (hasSub_)      osc += p.subLevel() * osc_.processSub();   // 베이스 보강
 
         // ── 필터 컷오프 모듈레이션 (옥타브/로그 도메인) ──
-        float env = env_.process();                       // 0..1
-        const float kEnvOct = 4.0f;   // 엔벨로프가 컷오프를 흔드는 최대 옥타브
-        const float kLfoOct = 2.0f;   // LFO 가 컷오프를 흔드는 최대 옥타브
-        float mod = p.lpfEnvAmount() * env * kEnvOct
-                  + p.lpfLfoAmount() * lfoVal * kLfoOct;
-        float cutoff = p.lpfCutoffHz() * std::pow(2.0f, mod);
-        filter_.setCutoff(cutoff);
+        const float env = env_.process();                // 0..1
+        const float kEnvOct = 4.0f, kLfoOct = 2.0f;
+        const float mod = p.lpfEnvAmount() * env * kEnvOct
+                        + p.lpfLfoAmount() * lfoVal * kLfoOct;
+        filter_.setCutoff(p.lpfCutoffHz() * std::pow(2.0f, mod));
         filter_.setResonance(p.lpfResonance());
+        const float y = filter_.processLP(osc);
 
-        float y = filter_.processLP(osc);
-
-        // 진폭: 엔벨로프 * 벨로시티
         return y * env * velocity_;
     }
 
 private:
     float sampleRate_ = 44100.0f;
-    Oscillator osc_;
-    Oscillator oscDetune_;
+    Oscillator osc_, oscDetune_;
     Filter     filter_;
     Envelope   env_;
 
-    int   midi_     = 60;
-    float velocity_ = 1.0f;
-    bool  active_   = false;
-    bool  hasSub_   = false;
+    float centerMidi_  = 60.0f;   // 현재(글라이드 중) 기준음
+    float centerTarget_= 60.0f;   // 목표 기준음
+    float offset_      = 0.0f;    // 바 위치 오프셋(반음, 즉각)
+    float glideAlpha_  = 1.0f;    // 1-pole 글라이드 계수
+    float velocity_    = 1.0f;
+    bool  active_      = false;
+    bool  hasSub_      = false;
 };
 
 } // namespace syn

@@ -1,4 +1,4 @@
-// SynthEngine.cpp — 엔진 구현
+// SynthEngine.cpp — 엔진 구현 (신버전)
 #include "SynthEngine.h"
 #include "../hardware/ControlIds.h"
 
@@ -7,64 +7,57 @@ bool SynthEngine::setup(float sampleRate, unsigned int maxBlockSize) {
     maxBlock_   = maxBlockSize;
 
     for (auto& v : voices_) v.setup(sampleRate);
-    voiceAge_.fill(0);
 
     lfo_.setup(sampleRate);
     lfo_.setRate(params_.lfoRateHz());
 
-    performer_.reset();
-
-    masterSmooth_.setup(sampleRate, 20.0f);   // 20ms 램프
+    masterSmooth_.setup(sampleRate, 20.0f);    // 20ms 램프
     masterSmooth_.snap(params_.masterVolume());
 
     if (!fx_.setup(sampleRate, maxBlockSize)) return false;
     return true;
 }
 
-void SynthEngine::applyPerformance(const hw::TrillFrame& frame) {
-    syn::Chord chord;
-    float velocity = 1.0f;
-    switch (performer_.poll(frame, chord, velocity)) {
-        case syn::ChordPerformer::Action::Trigger: triggerChord(chord, velocity); break;
-        case syn::ChordPerformer::Action::Release: releaseAll();                  break;
-        case syn::ChordPerformer::Action::None:    default:                       break;
+void SynthEngine::applyPerformance(const hw::TrillFrame& f) {
+    // ── 1) 링(5도권): 터치 중이면 루트 갱신, 떼면 마지막 값 유지(래치) ──
+    //   "터치하고 떼면 그 코드를 계속 저장" + "슬라이드하면 즉시 바뀜" 동시 충족.
+    if (f.ringActive) {
+        ringSeg_ = syn::ringToSegment(f.ringPos, ringSeg_);  // 이산 + 히스테리시스
+        rootPc_  = syn::segmentToRootPc(ringSeg_);
     }
-}
+    // f.ringActive == false → rootPc_ 그대로 유지 (래치)
 
-syn::Voice* SynthEngine::allocVoice() {
-    // 1) 비활성 보이스 우선
-    for (size_t i = 0; i < voices_.size(); ++i)
-        if (!voices_[i].isActive()) { voiceAge_[i] = ++age_; return &voices_[i]; }
-    // 2) 전부 활성 → 가장 오래된 것 스틸
-    size_t oldest = 0;
-    for (size_t i = 1; i < voices_.size(); ++i)
-        if (voiceAge_[i] < voiceAge_[oldest]) oldest = i;
-    voiceAge_[oldest] = ++age_;
-    return &voices_[oldest];
-}
+    // ── 2) 4개 바 → 4개 보이스 (연속 피치 + 게이트) ──
+    const hw::BarTouch* bars[syn::kNumBarVoices] = { &f.bass, &f.r5, &f.r8, &f.r3 };
+    for (int i = 0; i < syn::kNumBarVoices; ++i) {
+        const hw::BarTouch& b = *bars[i];
 
-void SynthEngine::triggerChord(const syn::Chord& c, float velocity) {
-    for (int i = 0; i < c.count; ++i) {
-        syn::Voice* v = allocVoice();
-        const bool isBass = (i == 0); // 최저음에만 서브 오실레이터
-        v->noteOn(c.notes[i], velocity, params_, isBass);
+        // 기준음(center)은 항상 갱신 → 터치 중 루트가 바뀌면 글라이드로 미끄러진다.
+        // 바 오프셋(offset)은 즉각 → 바를 따라 바이올린처럼 연속/등간격으로 변한다.
+        voices_[i].setTargetCenter(static_cast<float>(syn::voiceCenterMidi(rootPc_, i)));
+        voices_[i].setOffset(syn::barPosToOffsetSemis(b.pos));
+
+        if (b.active && !barWasActive_[i]) {
+            // 상승엣지: 게이트 온 (베이스 바에만 서브 오실레이터)
+            // strength(터치 면적)가 들어오면 벨로시티로, 없으면(0) 풀 볼륨.
+            const float vel = (b.strength > 0.01f) ? (0.3f + 0.7f * b.strength) : 1.0f;
+            voices_[i].gateOn(vel, params_, /*isBass=*/(i == syn::Bass));
+        } else if (!b.active && barWasActive_[i]) {
+            voices_[i].gateOff();   // 하강엣지: 릴리즈
+        }
+        barWasActive_[i] = b.active;
     }
-}
-
-void SynthEngine::releaseAll() {
-    for (auto& v : voices_) v.gateOff();
 }
 
 void SynthEngine::render(float* outLeft, float* outRight, unsigned int numFrames) {
     // ── 1) 보이스 합산 (모노 믹스) ──
     for (unsigned int n = 0; n < numFrames; ++n) {
-        const float lfoVal = lfo_.process();   // 공유 LFO (-1..1)
+        const float lfoVal = lfo_.process();          // 공유 LFO (-1..1)
         float mix = 0.0f;
         for (auto& v : voices_)
             if (v.isActive()) mix += v.process(params_, lfoVal);
 
-        // 동시 발음 헤드룸(코드라 여러 보이스 합산됨)
-        mix *= 0.25f;
+        mix *= 0.30f;                                  // 4보이스 합산 헤드룸
 
         outLeft[n]  = mix;
         outRight[n] = mix;
@@ -83,14 +76,13 @@ void SynthEngine::render(float* outLeft, float* outRight, unsigned int numFrames
 }
 
 void SynthEngine::setParameter(int controlId, float value) {
-    // 패널 파라미터 저장(실제 단위). 즉시 반영이 필요한 것만 추가 처리.
-    params_.setFromControl(controlId, value);
+    params_.setFromControl(controlId, value);   // 실제 단위 저장
 
     using hw::ControlId;
     switch (static_cast<ControlId>(controlId)) {
         case ControlId::LfoRate: lfo_.setRate(params_.lfoRateHz()); break;
-        // 컷오프/레조넌스/엔벨로프 등은 보이스가 매 샘플 params_ 에서 직접 읽으므로
-        // 여기서 따로 push 할 필요 없음.
+        // 컷오프/레조넌스/엔벨로프/파형 등은 보이스가 매 샘플 params_ 에서 직접 읽으므로
+        // 여기서 별도 push 불필요.
         default: break;
     }
 }

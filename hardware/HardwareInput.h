@@ -49,9 +49,15 @@ private:
 
     ParameterSink* sink_        = nullptr; // 엔진
     ParameterSink* displaySink_ = nullptr; // 디스플레이 피드백(선택)
-    bool  useMux_   = false;               // 멀티플렉서 캐플릿 사용 여부(setup 에서 감지)
+    bool  useMux_   = false;               // 멀티플렉서 캐플릿 사용 여부
     bool  pinModesSet_ = false;
 
+    // -- 외장 MUX 제어를 위해 추가된 변수들 --
+    int currentMuxCh_ = 0;
+	int prevMuxCh_ = 0;
+    static constexpr int kMuxPins[4] = {0, 1, 2, 3}; // D0, D1, D2, D3 핀 번호
+
+    // -- 20260626 이상준 추가 --
     // 한 노브의 raw(0~1) 읽기 — 직결/멀티플렉서를 추상화
     float readPot(BelaContext* context, const PotMap& p);
     // 스위치 핀들을 읽어 포지션으로 디코딩

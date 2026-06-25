@@ -52,23 +52,33 @@ void render(BelaContext *context, void *userData) {
     if (printCounter >= 200) {
         printCounter = 0;
 
-        // 4개의 센서 중 하나라도 손이 닿아있을 때만 콘솔에 출력합니다.
-        if (tFrame.ringActive || tFrame.qualityActive || tFrame.complexityActive || tFrame.voicingActive) {
+// 수정된 터치 확인 조건문: 새로운 5개의 센서 상태를 확인합니다.
+        if (tFrame.ringActive || tFrame.bass.active || tFrame.r5.active || tFrame.r8.active || tFrame.r3.active) {
             
-            rt_printf("--- 터치 감지 중 ---\n");
-            
-            if (tFrame.ringActive) 
+            // Ring 센서 상태 출력
+            if (tFrame.ringActive) {
                 rt_printf("  [Ring] 위치: %.3f\n", tFrame.ringPos);
-            
-            if (tFrame.qualityActive) 
-                rt_printf("  [Qual] 위치: %.3f\n", tFrame.qualityPos);
-            
-            if (tFrame.complexityActive) 
-                rt_printf("  [Comp] 위치: %.3f\n", tFrame.complexityPos);
-            
-            if (tFrame.voicingActive) 
-                rt_printf("  [Voic] 위치: %.3f | 세기(면적): %.3f\n", tFrame.voicingPos, tFrame.voicingStrength);
-                
+            }
+
+            // Bass 바 상태 출력
+            if (tFrame.bass.active) {
+                rt_printf("  [Bass] 위치: %.3f | 세기(면적): %.3f\n", tFrame.bass.pos, tFrame.bass.strength);
+            }
+
+            // R5 바 상태 출력
+            if (tFrame.r5.active) {
+                rt_printf("  [R5] 위치: %.3f | 세기(면적): %.3f\n", tFrame.r5.pos, tFrame.r5.strength);
+            }
+
+            // R8 바 상태 출력
+            if (tFrame.r8.active) {
+                rt_printf("  [R8] 위치: %.3f | 세기(면적): %.3f\n", tFrame.r8.pos, tFrame.r8.strength);
+            }
+
+            // R3 바 상태 출력
+            if (tFrame.r3.active) {
+                rt_printf("  [R3] 위치: %.3f | 세기(면적): %.3f\n", tFrame.r3.pos, tFrame.r3.strength);
+            }                
             rt_printf("\n"); // 보기 좋게 줄바꿈
         }
     }

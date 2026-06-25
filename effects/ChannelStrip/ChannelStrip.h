@@ -1,12 +1,17 @@
-// ChannelStrip.h — EQ + 컴프 + 드라이브 + 출력레벨을 묶은 채널스트립
-//   (레퍼런스: Apogee Symphony ECS Channel Strip)
-//
+// ChannelStrip.h — EQ + 컴프 + (공통 Gain/Out) 채널스트립
+// ───────────────────────────────────────────────────────────────────────────
 // 파라미터 ID 규약 (한 스트립이 하나의 ID 공간):
 //   0   ~ 99   : Equalizer  (서브 ID = paramId - kEqBase)
 //   100 ~ 199  : Compressor (서브 ID = paramId - kCompBase)
-//   200 ~      : 스트립 글로벌 (StripParam)
+//   200 ~      : 스트립 글로벌 (StripParam, 서브 ID = paramId - kStripBase)
+//
+// 라우팅:
+//   in → ×Gain → [순서: EQ→Comp 또는 Comp→EQ] → ×Out
+//   EQ 의 HP>SC 가 켜져 있으면 EQ 의 사이드체인 출력을 컴프 검출 입력으로 연결.
+// ───────────────────────────────────────────────────────────────────────────
 #pragma once
 #include "../Effect.h"
+#include "../Dsp.h"
 #include "Equalizer.h"
 #include "Compressor.h"
 
@@ -14,15 +19,16 @@ namespace fx {
 
 class ChannelStrip : public Effect {
 public:
-    static constexpr int kEqBase   = 0;
-    static constexpr int kCompBase = 100;
-    static constexpr int kStripBase= 200;
+    static constexpr int kEqBase    = 0;
+    static constexpr int kCompBase  = 100;
+    static constexpr int kStripBase = 200;
 
-    enum class Order : int { EqThenComp = 0, CompThenEq = 1 }; // EQ>COMP / COMP>EQ
+    enum class Order : int { EqThenComp = 0, CompThenEq = 1 };
 
+    // 스트립 글로벌 (paramId = kStripBase + 값)
     enum class StripParam : int {
-        Drive         = 0,  // 0 .. 10
-        OutputLevelDb = 1,  // -20 .. +20
+        InputGainDb   = 0,  // -inf .. +12  공통 Gain
+        OutputLevelDb = 1,  // -inf .. +12  공통 Out
         RoutingOrder  = 2,  // 0=EQ>COMP, 1=COMP>EQ
     };
 
@@ -38,15 +44,12 @@ public:
 private:
     Equalizer  eq_;
     Compressor comp_;
-    Order order_      = Order::EqThenComp;
-    float drive_      = 0.0f;
-    SmoothedValue outputGain_;
-    // TODO(구현자):
-    //  - order_ 에 따라 eq→comp 또는 comp→eq 순서로 process
-    //  - EQ 의 HP>SC 라우팅이면 EQ 의 사이드체인 출력을 comp.setSidechain 으로 연결
-    //  - drive: 출력 전 비선형 새츄레이션(0이면 통과)
-    //  - outputGain: 마지막에 적용
-    void applyDrive(float* l, float* r, unsigned int n); // TODO
+    Order order_ = Order::EqThenComp;
+    SmoothedValue inGain_, outGain_;
+
+    // EQ→Comp 순서일 때 HP>SC 사이드체인을 연결하는 헬퍼.
+    void runEq(float* l, float* r, unsigned int n);
+    void runComp(float* l, float* r, unsigned int n, bool useEqSidechain);
 };
 
 } // namespace fx

@@ -1,31 +1,37 @@
-// Reverb.h — 리버브 (레퍼런스: Clearmountain's Spaces)
+// Reverb.h — 플레이트/홀 리버브 (Freeverb 계열 comb+allpass 코어 + 스핀 모듈레이션)
+// ───────────────────────────────────────────────────────────────────────────
+// 디스플레이 노브 매핑(사용자 스펙):
+//   공통 : Gain(입력), Out(출력 레벨)
+//   탭   : Type (Plate / Hall 선택)
+//   노브 : Size, Decay, LowCut(리버브 들어가기 전), HighCut, Spin, SpinDepth, Mix
 //
-// 디스플레이에서 받는 것:
-//   - 룸 계열 리버브 양, 홀 계열 리버브 양 (두 공간을 블렌딩)
-//   - 프리딜레이(ms), wet/dry
-//   - 리버브 출력에 거는 내부 EQ
-// 입력 오디오를 받아 잔향이 더해진 출력을 낸다.
+// 신호 흐름(스테레오):
+//   in → ×Gain → [LowCut HP] → [HighCut 는 코어 감쇠로 반영] → reverb 코어(comb×8→allpass×4)
+//      → wet.  out = (dry×(1-Mix) + wet×Mix) × Out
+//   Spin : 코어 allpass 딜레이를 LFO 로 미세 변조 → 잔향이 살아 움직이는 느낌.
+// ───────────────────────────────────────────────────────────────────────────
 #pragma once
 #include "../Effect.h"
+#include "../Dsp.h"
 
 namespace fx {
 
 class Reverb : public Effect {
 public:
-    // value 범위는 주석 참고. 디스플레이가 이 정수 ID 로 값을 보낸다.
+    enum class Type : int { Plate = 0, Hall = 1 };
+
+    // 디스플레이가 이 정수 ID 로 값을 보낸다. (value 단위는 주석 참고)
     enum class Param : int {
-        InputGainDb  = 0,   // -inf .. +12  (dB)
-        PreDelayMs   = 1,   // 0 .. 250     (ms)
-        RoomLevel    = 2,   // 0.0 .. 1.0   룸 계열 잔향 양
-        HallLevel    = 3,   // 0.0 .. 1.0   홀 계열 잔향 양
-        RoomSize     = 4,   // 0.0 .. 1.0   룸 코어 크기/감쇠
-        HallSize     = 5,   // 0.0 .. 1.0   홀 코어 크기/감쇠
-        WetDryMix    = 6,   // 0.0(dry) .. 1.0(wet)
-        EqEnable     = 7,   // 0 / 1
-        EqLowGainDb  = 8,   // -15 .. +15   (low shelf)
-        EqMidGainDb  = 9,   // -15 .. +15   (mid peak)
-        EqMidFreqHz  = 10,  // 200 .. 8000
-        EqHighGainDb = 11,  // -15 .. +15   (high shelf)
+        Gain      = 0,   // -inf..+12 dB  입력 게인
+        Out       = 1,   // -inf..+12 dB  출력 레벨
+        Type      = 2,   // 0=Plate, 1=Hall
+        Size      = 3,   // 0..1  공간 크기(딜레이 길이 스케일)
+        Decay     = 4,   // 0..1  잔향 길이(피드백)
+        LowCut    = 5,   // 20..1000 Hz   리버브 send 전 하이패스
+        HighCut   = 6,   // 1000..20000 Hz 코어 내부 댐핑(고역 감쇠) 코너
+        Spin      = 7,   // 0..5 Hz   잔향 변조 속도
+        SpinDepth = 8,   // 0..1      변조 깊이
+        Mix       = 9,   // 0(dry)..1(wet)
         NumParams
     };
 
@@ -36,24 +42,57 @@ public:
     void cleanup() override;
 
 private:
-    // ---- 디스플레이로부터 받은 파라미터 상태 ----
-    SmoothedValue inputGain_;
-    SmoothedValue wetDryMix_;
-    float preDelayMs_ = 0.0f;
-    float roomLevel_  = 0.3f;
-    float hallLevel_  = 0.0f;
-    float roomSize_   = 0.5f;
-    float hallSize_   = 0.7f;
-    bool  eqEnabled_  = false;
+    // ── 코어 구성요소 ──
+    // Comb : 댐핑(고역감쇠) 포함 피드백 콤필터. 잔향의 밀도/길이 담당.
+    struct Comb {
+        dsp::DelayLine line;
+        float store = 0.0f;     // 댐핑 1-pole 상태
+        float baseDelay = 0.0f; // 기준 딜레이(샘플)
+        inline float process(float in, float feedback, float damp) {
+            float out = line.read(baseDelay);
+            store = out + (store - out) * damp;   // 피드백 경로 lowpass(=HighCut)
+            line.write(in + store * feedback);
+            return out;
+        }
+    };
+    // Allpass : 잔향을 매끄럽게 확산. spin 으로 딜레이 변조.
+    struct Allpass {
+        dsp::DelayLine line;
+        float baseDelay = 0.0f;
+        inline float process(float in, float modSamples) {
+            float d = baseDelay + modSamples;
+            float bufout = line.read(d);
+            float out = -in + bufout;
+            line.write(in + bufout * 0.5f);
+            return out;
+        }
+    };
 
-    // TODO(구현자): 아래 DSP 블록을 구현/연결할 것
-    //  1) PreDelay: 링버퍼 (max 250ms). 입력을 지연시킨 뒤 리버브 코어로 보냄.
-    //  2) Room 코어 : 짧고 조밀한 잔향 (예: Schroeder comb+allpass 또는 작은 FDN).
-    //  3) Hall 코어 : 길고 부드러운 잔향 (예: 큰 FDN). roomSize/hallSize 로 감쇠 제어.
-    //  4) 두 코어 출력을 roomLevel/hallLevel 로 가중합 → reverbOut.
-    //  5) 내부 EQ : reverbOut 에 3밴드(low shelf/mid peak/high shelf) 적용. eqEnabled 일 때만.
-    //  6) WetDry : out = dry*(1-mix) + (eq(reverbOut))*mix, inputGain 반영.
-    //  스테레오 디코릴레이션(좌우 다른 딜레이 탭)으로 공간감 줄 것.
+    static constexpr int kNumCombs = 8;
+    static constexpr int kNumAllpass = 4;
+
+    Comb     combL_[kNumCombs],  combR_[kNumCombs];
+    Allpass  apL_[kNumAllpass],  apR_[kNumAllpass];
+
+    dsp::OnePole lowCutL_, lowCutR_;   // 리버브 send 전 하이패스
+    dsp::Lfo     spinLfo_;
+
+    SmoothedValue inGain_, outGain_, mix_;
+
+    // 파라미터 상태
+    Type  type_      = Type::Hall;
+    float size_      = 0.5f;
+    float decay_     = 0.6f;
+    float highCutHz_ = 8000.0f;
+    float spinHz_    = 0.5f;
+    float spinDepth_ = 0.0f;
+
+    // 파생 계수(파라미터 바뀔 때만 재계산)
+    float feedback_  = 0.84f;
+    float damp_      = 0.2f;
+    float spinSamples_ = 0.0f;
+
+    void recalcCore();   // size/decay/type/highcut → 딜레이길이/피드백/댐핑 재계산
 };
 
 } // namespace fx

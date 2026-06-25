@@ -1,24 +1,24 @@
-// Flanger.h — 플렌저 (레퍼런스: Clearmountain's Phases 좌측 모듈)
-// ModulationSet 안의 서브 모듈. 단독으로도 Effect 로 동작 가능.
+// Flanger.h — 플랜저 (짧은 변조 딜레이 + 강한 피드백 = 제트 사운드)
+// ───────────────────────────────────────────────────────────────────────────
+// 디스플레이 노브 매핑(사용자 스펙):
+//   Rate, BpmSync(버튼), Depth, Feedback, Phase(좌우 위상차), Mix
+// ───────────────────────────────────────────────────────────────────────────
 #pragma once
 #include "../Effect.h"
+#include "../Dsp.h"
 
 namespace fx {
 
 class Flanger : public Effect {
 public:
     enum class Param : int {
-        InOut        = 0,  // 0/1  모듈 on/off (패널 IN/OUT)
-        ManualMs     = 1,  // 0.2 .. 4.0  기준 딜레이(ms)
-        SweepDepth   = 2,  // 0 .. 100 (%)
-        SweepRateHz  = 3,  // LFO 속도(Hz) 또는 sync 시 노트분할 인덱스
-        FeedbackAmt  = 4,  // 0 .. 10
-        FeedbackFreq = 5,  // 20 .. 1000 (Hz) 피드백 필터
-        Polarity     = 6,  // 0/1  피드백 위상
-        MixDryThru   = 7,  // 0(dry) .. 1(through-delay)
-        LfoPhaseDeg  = 8,  // 0/90/180/270
-        TapeFlange   = 9,  // 0/1
-        BbdType      = 10, // 0..5 (BBD/SAD/NTE/MN/TCA/WD 등 모델 선택)
+        InOut    = 0,  // 0/1
+        Rate     = 1,  // sync off: 0.05..8 Hz / sync on: 0..6 노트분할
+        BpmSync  = 2,  // 0/1
+        Depth    = 3,  // 0..1  변조 깊이
+        Feedback = 4,  // 0..0.95 (음수 위상은 내부 폭 조절)
+        Phase    = 5,  // 0..1  좌우 LFO 위상차
+        Mix      = 6,  // 0(dry)..1(wet)
         NumParams
     };
 
@@ -27,24 +27,25 @@ public:
     void setParameter(int paramId, float value) override;
     void reset() override;
 
-    // 세트(ModulationSet)에서 글로벌 LFO sync / sweep rate 를 주입할 때 사용
-    void setLfoSync(bool on)      { lfoSync_ = on; }
-    void setSweepRate(float rate) { sweepRateHz_ = rate; }
+    void setTempo(float bpm) { tempo_ = bpm; updateRate(); }
 
 private:
-    float manualMs_   = 1.0f;
-    float sweepDepth_ = 0.0f;
-    float sweepRateHz_= 0.5f;
-    float feedback_   = 0.0f;
-    float fbFreqHz_   = 500.0f;
-    bool  polarity_   = false;
-    float mix_        = 0.5f;
-    int   lfoPhaseDeg_= 0;
-    bool  tapeFlange_ = false;
-    int   bbdType_    = 0;
-    bool  lfoSync_    = false;
-    // TODO(구현자): 짧은 변조 딜레이라인 + LFO(삼각/사인) + 피드백 + 피드백 1-pole 필터.
-    //  TapeFlange/BbdType 에 따라 보간/대역제한 특성 변경.
+    dsp::DelayLine lineL_, lineR_;
+    dsp::Lfo       lfo_;
+
+    bool  inOut_    = true;
+    float rateRaw_  = 0.3f;
+    bool  bpmSync_  = false;
+    float depth_    = 0.6f;
+    float feedback_ = 0.5f;
+    float phase_    = 0.0f;
+    float mix_      = 0.5f;
+    float tempo_    = 120.0f;
+
+    float fbL_ = 0.0f, fbR_ = 0.0f;
+
+    void  updateRate();
+    float msToSamples(float ms) const { return ms * 0.001f * sampleRate_; }
 };
 
 } // namespace fx

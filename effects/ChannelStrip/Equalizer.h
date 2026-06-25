@@ -1,7 +1,18 @@
-// Equalizer.h — 채널스트립 EQ 섹션 (레퍼런스: Apogee Symphony ECS)
-//   HP 필터 + Lo Shelf + Mid Peak + Hi Shelf. HP 라우팅(HP>EQ / HP>SC) 지원.
+// Equalizer.h — 채널스트립 EQ 섹션
+//   HP(하이패스) + Lo Shelf + Mid Peak + Hi Shelf. HP 라우팅(HP>EQ / HP>SC) 지원.
+// ───────────────────────────────────────────────────────────────────────────
+// 디스플레이 노브 매핑(사용자 스펙):
+//   Highpass 주파수, LoShelf 주파수/게인, MidPeak 주파수/게인, HiShelf 주파수/게인,
+//   HP 라우팅 스위치(HP>EQ / HP>SC).
+//
+// HP>EQ : 하이패스를 메인 오디오 경로에 적용(저음이 실제로 깎임).
+// HP>SC : 하이패스 신호를 컴프 사이드체인으로만 보냄. 귀에는 저음 그대로,
+//         컴프만 저음에 덜 반응 → 킥/베이스로 인한 펌핑 방지.
+// ───────────────────────────────────────────────────────────────────────────
 #pragma once
 #include "../Effect.h"
+#include "../Dsp.h"
+#include <vector>
 
 namespace fx {
 
@@ -17,7 +28,7 @@ public:
         LoShelfGainDb = 4,  // -15 .. +15
         MidFreqHz     = 5,  // 250 .. 8000
         MidGainDb     = 6,  // -15 .. +15
-        MidBell       = 7,  // 0/1 (벨 ↔ 다른 형태 토글)
+        MidBell       = 7,  // 0/1 (사용 안하면 1 고정)
         HiShelfFreqHz = 8,  // 4000 .. 16000
         HiShelfGainDb = 9,  // -15 .. +15
         NumParams
@@ -28,9 +39,11 @@ public:
     void setParameter(int paramId, float value) override;
     void reset() override;
 
-    // 컴프 사이드체인용: HP>SC 일 때 HP 통과 신호를 따로 뽑아 컴프에 넘김
-    HpRoute hpRoute() const { return hpRoute_; }
-    // TODO(구현자): 사이드체인 신호 접근자 추가 (예: getSidechain(buf,...))
+    // 컴프 사이드체인용 접근자. HP>SC 일 때 process 가 채워둔 HP 통과 신호.
+    // (HP>EQ 일 때는 메인 출력과 동일한 신호가 들어 있음 = 일반 사이드체인)
+    HpRoute      hpRoute()      const { return hpRoute_; }
+    const float* sidechainL()   const { return scL_.data(); }
+    const float* sidechainR()   const { return scR_.data(); }
 
 private:
     bool    enabled_   = true;
@@ -40,8 +53,13 @@ private:
     float   midFreq_   = 1000.0f, midGain_= 0.0f;
     bool    midBell_   = true;
     float   hiFreq_    = 8000.0f, hiGain_ = 0.0f;
-    // TODO(구현자): 4개 바이쿼드(HP, lowshelf, peak, highshelf) 좌우 각각. 계수 재계산은
-    //   파라미터 변경 시에만. midBell 로 peak↔shelf 전환.
+
+    // 채널별 바이쿼드 4개 (HP, lowshelf, peak, highshelf)
+    dsp::Biquad hpL_, hpR_, loL_, loR_, midL_, midR_, hiL_, hiR_;
+
+    std::vector<float> scL_, scR_;   // 사이드체인 출력 버퍼 (maxBlock 크기)
+
+    void recalc();   // 파라미터 → 바이쿼드 계수 재계산
 };
 
 } // namespace fx

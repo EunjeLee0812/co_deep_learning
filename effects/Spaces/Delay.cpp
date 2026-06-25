@@ -1,78 +1,116 @@
-#include "Delay.h"
+// Delay.cpp — 스테레오 딜레이 구현
+#include "Spaces/Delay.h"
 
 namespace fx {
 
-bool Delay::setup(float sampleRate, unsigned int maxBlockSize) {
+static constexpr float kMaxDelayMs = 4000.0f;
+
+bool Delay::setup(float sampleRate, unsigned int /*maxBlockSize*/) {
     sampleRate_ = sampleRate;
-    left_.delaySamples.setup(sampleRate, 50.0f);   // 딜레이타임 변경 시 50ms 램프
-    right_.delaySamples.setup(sampleRate, 50.0f);
+    int maxSamples = (int)(kMaxDelayMs * 0.001f * sampleRate) + 8;
+
+    for (Channel* c : { &left_, &right_ }) {
+        c->line.setup(maxSamples);
+        c->fbLowCut.setSampleRate(sampleRate);
+        c->fbHighCut.setSampleRate(sampleRate);
+        c->fbLowCut.setCutoff(120.0f);     // HP: 120Hz 이하 컷
+        c->fbHighCut.setCutoff(8000.0f);   // LP: 8kHz 이상 컷
+        c->delaySamples.setup(sampleRate, 60.0f); // 시간 변경 시 60ms 램프(글리치 방지)
+    }
     left_.delaySamples.snap(msToSamples(333.0f));
     right_.delaySamples.snap(msToSamples(333.0f));
-    // TODO: 좌우 링버퍼 할당 (최소 4초 분량), LFO/EQ 초기화
+
+    inGain_.setup(sampleRate, 20.0f);
+    outGain_.setup(sampleRate, 20.0f);
+    mix_.setup(sampleRate, 20.0f);
+    inGain_.snap(1.0f);
+    outGain_.snap(1.0f);
+    mix_.snap(0.3f);
+
+    recalcTimes();
     reset();
     return true;
+}
+
+// sync/link/tempo 를 반영해 좌우 딜레이 목표 샘플수를 갱신.
+void Delay::recalcTimes() {
+    float lMs, rMs;
+    if (bpmSync_) {
+        lMs = dsp::noteDivSeconds(left_.noteDiv,  tempoBpm_) * 1000.0f;
+        rMs = dsp::noteDivSeconds(right_.noteDiv, tempoBpm_) * 1000.0f;
+    } else {
+        lMs = left_.timeMs;
+        rMs = right_.timeMs;
+    }
+    if (link_) rMs = lMs;   // 링크 시 우=좌
+
+    lMs = dsp::clampf(lMs, 1.0f, kMaxDelayMs);
+    rMs = dsp::clampf(rMs, 1.0f, kMaxDelayMs);
+    left_.delaySamples.setTarget(msToSamples(lMs));
+    right_.delaySamples.setTarget(msToSamples(rMs));
 }
 
 void Delay::process(float* left, float* right, unsigned int numFrames) {
     if (bypassed_) return;
     for (unsigned int n = 0; n < numFrames; ++n) {
-        // TODO(구현자): 좌우 각각
-        //   readPos = writePos - delaySamples.next()  (분수지연 보간)
-        //   wet = ringRead(readPos)
-        //   crossfeed/spin/blur 적용
-        //   ringWrite(input + wet*feedback)
-        //   out = wet (필요 시 dry 믹스)  + EQ
-        (void)left; (void)right; // 자리표시
+        const float g   = inGain_.next();
+        const float mix = mix_.next();
+        const float og  = outGain_.next();
+
+        float inL = left[n]  * g;
+        float inR = right[n] * g;
+
+        float dL = left_.delaySamples.next();
+        float dR = right_.delaySamples.next();
+
+        float wetL = left_.line.read(dL);
+        float wetR = right_.line.read(dR);
+
+        if (mode_ == Mode::PingPong) {
+            // 교차 피드백: 좌 출력이 우 입력으로, 우 출력이 좌 입력으로 → 바운스.
+            float fbToLeft  = right_.fbHighCut.lp(right_.fbLowCut.hp(wetR)) * feedback_;
+            float fbToRight = left_.fbHighCut.lp(left_.fbLowCut.hp(wetL))  * feedback_;
+            left_.line.write(inL + fbToLeft);
+            right_.line.write(inR + fbToRight);
+        } else {
+            // 일반: 각 채널 자기 피드백(필터 통과).
+            float fbL = left_.fbHighCut.lp(left_.fbLowCut.hp(wetL))   * feedback_;
+            float fbR = right_.fbHighCut.lp(right_.fbLowCut.hp(wetR)) * feedback_;
+            left_.line.write(inL + fbL);
+            right_.line.write(inR + fbR);
+        }
+
+        left[n]  = (left[n]  * (1.0f - mix) + wetL * mix) * og;
+        right[n] = (right[n] * (1.0f - mix) + wetR * mix) * og;
     }
 }
 
 void Delay::setParameter(int paramId, float value) {
     switch (static_cast<Param>(paramId)) {
-        case Param::TempoBpm:      tempoBpm_      = value; break;
-        case Param::SyncEnable:    syncEnabled_   = (value >= 0.5f); break;
-        case Param::SpinCrossfeed: spinCrossfeed_ = (value >= 0.5f); break;
-        case Param::PitchPreSpin:  pitchPreSpin_  = (value >= 0.5f); break;
-        case Param::DelayBlur:     delayBlur_     = value; break;
-        case Param::LinkSpin:      linkSpin_      = (value >= 0.5f); applyLink(); break;
-        case Param::LinkOffset:    linkOffset_    = (value >= 0.5f); applyLink(); break;
-        case Param::LinkEq:        linkEq_        = (value >= 0.5f); applyLink(); break;
-
-        case Param::LeftDelayMs:     left_.delaySamples.setTarget(msToSamples(value)); break;
-        case Param::LeftNoteDiv:     left_.noteDiv = static_cast<NoteDiv>((int)value); break;
-        case Param::LeftOffsetMs:    left_.offsetMs = value; break;
-        case Param::LeftSpin:        left_.spin = value; break;
-        case Param::LeftFeedback:    left_.feedback = value; break;
-        case Param::LeftEqEnable:    left_.eqEnabled = (value >= 0.5f); break;
-        case Param::LeftEqMidFreqHz: left_.eqFreqHz = value; break;
-        case Param::LeftEqGainDb:    left_.eqGainDb = value; break;
-        case Param::LeftEqQ:         left_.eqQ = value; break;
-
-        case Param::RightDelayMs:     right_.delaySamples.setTarget(msToSamples(value)); break;
-        case Param::RightNoteDiv:     right_.noteDiv = static_cast<NoteDiv>((int)value); break;
-        case Param::RightOffsetMs:    right_.offsetMs = value; break;
-        case Param::RightSpin:        right_.spin = value; break;
-        case Param::RightFeedback:    right_.feedback = value; break;
-        case Param::RightEqEnable:    right_.eqEnabled = (value >= 0.5f); break;
-        case Param::RightEqMidFreqHz: right_.eqFreqHz = value; break;
-        case Param::RightEqGainDb:    right_.eqGainDb = value; break;
-        case Param::RightEqQ:         right_.eqQ = value; break;
+        case Param::Gain:        inGain_.setTarget(dsp::dbToLin(value)); break;
+        case Param::Out:         outGain_.setTarget(dsp::dbToLin(value)); break;
+        case Param::Feedback:    feedback_ = dsp::clampf(value, 0.0f, 0.98f); break;
+        case Param::TempoBpm:    tempoBpm_ = value; recalcTimes(); break;
+        case Param::BpmSync:     bpmSync_ = (value >= 0.5f); recalcTimes(); break;
+        case Param::Link:        link_ = (value >= 0.5f); recalcTimes(); break;
+        case Param::Mode:        mode_ = (value >= 0.5f) ? Mode::PingPong : Mode::Normal; break;
+        case Param::HighCut:     left_.fbHighCut.setCutoff(value); right_.fbHighCut.setCutoff(value); break;
+        case Param::LowCut:      left_.fbLowCut.setCutoff(value);  right_.fbLowCut.setCutoff(value);  break;
+        case Param::Mix:         mix_.setTarget(dsp::clampf(value, 0.0f, 1.0f)); break;
+        case Param::LeftTimeMs:  left_.timeMs  = value; recalcTimes(); break;
+        case Param::LeftDiv:     left_.noteDiv = (int)value; recalcTimes(); break;
+        case Param::RightTimeMs: right_.timeMs = value; recalcTimes(); break;
+        case Param::RightDiv:    right_.noteDiv= (int)value; recalcTimes(); break;
         default: break;
     }
-    if (syncEnabled_) {
-        // TODO: tempo/noteDiv/offset 로 좌우 delaySamples 재계산
-    }
-}
-
-void Delay::applyLink() {
-    // TODO: linkSpin_/linkOffset_/linkEq_ 가 true 면 right_ 의 해당 값을 left_ 값으로 동기화
 }
 
 void Delay::reset() {
-    // TODO: 링버퍼 0으로, LFO 위상 초기화
+    left_.line.reset();  right_.line.reset();
+    left_.fbLowCut.reset();  left_.fbHighCut.reset();
+    right_.fbLowCut.reset(); right_.fbHighCut.reset();
 }
 
-void Delay::cleanup() {
-    // TODO: 버퍼 해제
-}
+void Delay::cleanup() {}
 
 } // namespace fx

@@ -1,99 +1,119 @@
-// TrillInput.cpp
-// ───────────────────────────────────────────────────────────────────────────
-// ★ 이 파일은 "하드웨어 담당"이 채우는 스켈레톤이다. ★
-// 합성 담당(이은제)은 TrillFrame 의 의미(TrillInput.h)만 알면 되고,
-// 아래 TODO 는 하드웨어 담당이 채운다. (스켈레톤 상태에서도 빌드/무음 실행됨)
-//
-// [신규 배치] Trill Ring 1 + Trill Bar 4 (왼쪽 1 = Bass, 오른쪽 3 = R5/R8/R3)
-//
-// 채워야 할 것:
-//   1) 5개 Trill 센서를 I2C 로 setup (Ring=Trill::RING, Bar=Trill::BAR)
-//   2) AuxiliaryTask 안에서 주기적으로 readI2C() → 위치/면적 읽기
-//   3) raw 값을 TrillFrame 규약(0..1, 방향)에 맞춰 채우기
-//      ★ 바 방향: pos 0=맨위(낮은음) / 0.5=가운데(기준) / 1=맨아래(높은음).
-//        장착이 뒤집혀 있으면 (1.0f - raw) 로 보정.
-//
-// 참고: Bela Trill 라이브러리 (대략)
-//   #include <libraries/Trill/Trill.h>
-//   Trill ring; ring.setup(1 /*i2cBus*/, Trill::RING, 0x38 /*addr*/);
-//   ring.readI2C();
-//   unsigned int n = ring.getNumTouches();
-//   float loc  = ring.touchLocation(0);  // 0..1
-//   float size = ring.touchSize(0);      // 터치 면적(정규화 필요)
-//
-// I2C 주소는 센서마다 다르게(점퍼/펌웨어) 배정해야 5개를 한 버스에 물릴 수 있다.
-// ───────────────────────────────────────────────────────────────────────────
 #include "TrillInput.h"
-// #include <Bela.h>
-// #include <libraries/Trill/Trill.h>
+#include <Bela.h>
+#include <libraries/Trill/Trill.h>
 #include <algorithm>
 #include <cmath>
 
+// 사용법: 센서 on/off를 원할시, 각 센서마다 두가지를 시행
+// ㄱ. bool TrillInput::setup()에서  3. 각 센서 초기화 에 if문과 그 아래의 g.setMode를 활성화
+// ㄴ. void TrillInput::poll()에서 .Active = false; 줄을 주석처리 하고, 아래 긴 코드들은 주석( /* ~ */ ) 해제하여 활성화
+
 namespace hw {
 
-// TODO(하드웨어): 실제 센서 객체/상태.
-// 예: static Trill gRing, gBass, gR5, gR8, gR3;
-//     static AuxiliaryTask gReadTask;
+// 1. 실제 센서 객체 및 백그라운드 태스크 선언
+static Trill gRing;
+static Trill gQuality;
+static Trill gComplexity;
+static Trill gVoicing;
+static AuxiliaryTask gReadTask;
 
 namespace {
-// raw touchSize → 0..1 세기 정규화 기준 면적 (센서/펌웨어 의존, 실측 보정).
-constexpr float kStrengthFullScale = 0.20f; // TODO(하드웨어): 실측값으로 교체
-inline float clamp01(float v) { return std::min(1.0f, std::max(0.0f, v)); }
+    // 터치 면적을 0.0 ~ 1.0 벨로시티로 정규화할 때 쓸 기준값
+    constexpr float kStrengthFullScale = 0.05f; // 손가락 면적에 맞게 나중에 조절하세요.
 
-// 한 Bar 센서를 읽어 BarTouch 로 채우는 헬퍼 패턴(주석 가이드).
-// void readBar(Trill& s, BarTouch& out, bool flip) {
-//     s.readI2C();
-//     if (s.getNumTouches() > 0) {
-//         out.active   = true;
-//         float p      = clamp01(s.touchLocation(0));
-//         out.pos      = flip ? (1.0f - p) : p;     // 위=낮음 규약 맞추기
-//         out.strength = clamp01(s.touchSize(0) / kStrengthFullScale);
-//     } else {
-//         out.active = false; out.strength = 0.0f;
-//     }
-// }
+    inline float clamp01(float v) { return std::min(1.0f, std::max(0.0f, v)); }
+
+    // 2. 백그라운드에서 무한히 센서를 읽어올 루프 함수
+    // (I2C 통신은 느려서 오디오 스레드에서 직접 읽으면 소리가 끊깁니다)
+    void readLoop(void* arg) {
+        TrillInput* input = static_cast<TrillInput*>(arg);
+        while(!Bela_stopRequested()) {
+            input->poll(); // 실제 센서 읽기 호출
+            usleep(10000);  // 10ms 대기 (초당 약 100회 읽기, CPU 부담 완화)
+        }
+    }
 } // namespace
 
 bool TrillInput::setup(BelaContext* /*context*/) {
-    // ── TODO(하드웨어) ──────────────────────────────────────────────────────
-    // 1) 각 Trill 센서 setup. 실패하면 false.
-    //    if (gRing.setup(1, Trill::RING, 0x38) != 0) return false;
-    //    if (gBass.setup(1, Trill::BAR,  0x20) != 0) return false;
-    //    if (gR5  .setup(1, Trill::BAR,  0x21) != 0) return false;
-    //    if (gR8  .setup(1, Trill::BAR,  0x22) != 0) return false;
-    //    if (gR3  .setup(1, Trill::BAR,  0x23) != 0) return false;
-    //    각 센서: setMode(Trill::CENTROID);
-    // 2) I2C 읽기용 AuxiliaryTask 생성 후 주기 스케줄.
-    //
-    // 스켈레톤: 센서 없어도 빌드/실행되도록 무음 기본 프레임.
+    // 3. 각 센서 초기화 (I2C 버스 1번 사용)
+    if (gRing.setup(1, Trill::RING, 0x38) != 0) { rt_printf("Ring 센서 연결 실패!\n"); return false; }
+    //if (gQuality.setup(1, Trill::BAR,  0x20) != 0) { rt_printf("Quality 바 연결 실패!\n"); return false; }
+    if (gComplexity.setup(1, Trill::BAR, 0x21) != 0) { rt_printf("Complexity 바 연결 실패!\n"); return false; }
+    //if (gVoicing.setup(1, Trill::BAR, 0x22) != 0) { rt_printf("Voicing 바 연결 실패!\n"); return false; }
+
+    // 센서 모드를 위치와 면적을 둘 다 읽는 CENTROID 모드로 설정
+    gRing.setMode(Trill::CENTROID);
+    //gQuality.setMode(Trill::CENTROID);
+    gComplexity.setMode(Trill::CENTROID);
+    //gVoicing.setMode(Trill::CENTROID);
+
+    // 4. 백그라운드 태스크 생성 및 실행
+    gReadTask = Bela_createAuxiliaryTask(readLoop, 50, "trill-read", this);
+    Bela_scheduleAuxiliaryTask(gReadTask);
+
     frame_ = TrillFrame{};
+    rt_printf("✅ Trill 터치 센서 4개 초기화 완료!\n");
     return true;
 }
 
 void TrillInput::poll() {
-    // ★ AuxiliaryTask 안에서 호출 (readI2C 가 블로킹).
-    //
-    // ── TODO(하드웨어) ──────────────────────────────────────────────────────
-    // [Ring] 5도권 루트
-    //   gRing.readI2C();
-    //   if (gRing.getNumTouches() > 0) {
-    //       frame_.ringActive = true;
-    //       frame_.ringPos    = gRing.touchLocation(0);  // 0=12시(C) 되도록 오프셋 보정
-    //   } else frame_.ringActive = false;   // 떼면 엔진이 마지막 루트 래치
-    //
-    // [Bars] 각 바: 위=낮음(pos 0) 규약. flip 은 실제 장착 방향 보고 결정.
-    //   readBar(gBass, frame_.bass, /*flip=*/false);  // 왼쪽: 1음 중심
-    //   readBar(gR5,   frame_.r5,   /*flip=*/false);  // 5음 중심
-    //   readBar(gR8,   frame_.r8,   /*flip=*/false);  // 8음(옥타브) 중심
-    //   readBar(gR3,   frame_.r3,   /*flip=*/false);  // 3음 중심
-    //
-    // (스켈레톤 상태에서는 아무것도 안 만짐 → 무음. 위 TODO 채우면 소리 남.)
-    (void)kStrengthFullScale;
-    (void)&clamp01;
+    // 5. 각 센서의 상태를 읽어서 프레임(frame_)에 0.0 ~ 1.0 값으로 예쁘게 담습니다. << 각 센서마다, 주석( /* ~ */ ) 이거 지우고, Active = false;이 줄은 주석처리 하면 동작합니다.
+    // [Ring] 5도권 베이스
+	//frame_.ringActive = false;
+	///*
+    gRing.readI2C();
+    if (gRing.getNumTouches() > 0) {
+        frame_.ringActive = true;
+        frame_.ringPos = gRing.touchLocation(0);
+    } else {
+        frame_.ringActive = false;
+    }
+	//*/
+
+    // [Quality Bar] M/m/aug/dim
+	frame_.qualityActive = false;
+	/*
+    gQuality.readI2C();
+    if (gQuality.getNumTouches() > 0) {
+        frame_.qualityActive = true;
+        frame_.qualityPos = clamp01(gQuality.touchLocation(0));
+    } else {
+        frame_.qualityActive = false;
+    }
+	*/
+
+    // [Complexity Bar] 텐션 (power -> dom7)
+	frame_.complexityActive = false;
+	//*
+    gComplexity.readI2C();
+    if (gComplexity.getNumTouches() > 0) {
+        frame_.complexityActive = true;
+        frame_.complexityPos = clamp01(gComplexity.touchLocation(0));
+        // 만약 센서를 거꾸로 달아서 위아래가 반대라면 아래 줄을 쓰세요.
+        // frame_.complexityPos = 1.0f - clamp01(gComplexity.touchLocation(0));
+    } else {
+        frame_.complexityActive = false;
+    }
+	//*/
+
+    // [Voicing Bar] 폭 + 세기 (발음 트리거)
+	frame_.voicingActive = false;
+    frame_.voicingStrength = 0.0f;
+	/*
+    gVoicing.readI2C();
+    if (gVoicing.getNumTouches() > 0) {
+        frame_.voicingActive = true;
+        frame_.voicingPos = clamp01(gVoicing.touchLocation(0));
+        frame_.voicingStrength = clamp01(gVoicing.touchSize(0) / kStrengthFullScale);
+    } else {
+        frame_.voicingActive = false;
+        frame_.voicingStrength = 0.0f;
+    }
+	*/
 }
 
 void TrillInput::cleanup() {
-    // TODO(하드웨어): 필요 시 센서/태스크 정리.
+    // 프로그램 종료 시 특별히 처리할 것은 없습니다. < 비워뒀습니다. 뭘 해야하는 곳인지 이해를 못해서..
 }
 
 } // namespace hw

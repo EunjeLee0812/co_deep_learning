@@ -12,7 +12,10 @@ void setBypass(bool); void reset(); void cleanup();
 - **디스플레이 → Bela** 통신은 `(paramId:int, value:float)` 한 쌍. 각 이펙트의 `enum class Param`
   값이 paramId 다. value 단위/범위는 각 헤더 Param 주석 참고.
 - 파라미터 급변 글리치 방지용 `SmoothedValue` 유틸이 Effect.h 에 있음 (실제 동작 구현됨).
-- 세부 DSP 는 각 `.cpp` 의 `TODO(구현자)` 를 채우면 됨. 헤더 시그니처/Param 은 바꾸지 말 것(통신 규약과 직결).
+- **세부 DSP 는 전부 구현 완료** (Reverb/Delay/ChannelStrip/ModulationSet/Distortion). 공용 RT-safe DSP 블록은 `Dsp.h`.
+- 헤더 시그니처/Param enum 은 바꾸지 말 것(디스플레이 통신 규약과 직결).
+- **디스플레이 팀 배선용 노브→ID 전체 표는 [`EFFECTS_PARAM_MAP.md`](EFFECTS_PARAM_MAP.md) 참고.**
+- `EffectChain` 의 모든 슬롯은 기본 bypass 다. 쓰려는 이펙트는 `setSlotBypass(<Slot>, false)` 로 켤 것.
 
 ## 이펙터 목록
 
@@ -27,7 +30,8 @@ void setBypass(bool); void reset(); void cleanup();
 | ChannelStrip | ChannelStrip.* | **EQ+Comp 묶음** + 드라이브 + 출력 + EQ↔COMP 순서 |
 | └ Equalizer | Equalizer.* | HP/Lo shelf/Mid peak/Hi shelf, HP>EQ·HP>SC |
 | └ Compressor | Compressor.* | threshold/ratio/attack/release/drywet, GR 미터, 사이드체인 |
-| Distortion | Distortion.* | 스펙 미정 — 표준 파라미터 placeholder |
+| Distortion | Distortion.* | Tube/SoftClip/HardClip + 연속 모프 EQ(HP↔BP↔LP) + drive/mix |
+| (공용) | Dsp.h | OnePole/Biquad/SVF/DelayLine/Lfo 등 RT-safe DSP 블록 |
 
 ## 묶음(세트) 파라미터 ID 규약
 ModulationSet / ChannelStrip 처럼 여러 서브모듈을 묶은 이펙트는 **100단위 구간**으로 ID 를 나눠

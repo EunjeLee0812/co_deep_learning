@@ -1,52 +1,45 @@
-// Delay.h — 스테레오 딜레이 (레퍼런스: 이미지 4 / Left·Right Delay)
+// Delay.h — 스테레오 딜레이 (좌우 독립 시간/박자, BPM sync, 링크, 필터, 핑퐁)
+// ───────────────────────────────────────────────────────────────────────────
+// 디스플레이 노브 매핑(사용자 스펙):
+//   공통   : Gain(입력), Out(출력 레벨)
+//   노브   : Feedback, LeftTime/Div, RightTime/Div, HighCut, LowCut, Mix
+//   버튼   : BpmSync(켜면 노브가 '시간'아닌 '박자'), Link(좌우 값 동일), Mode(Normal/PingPong)
+//   글로벌 : TempoBpm (BpmSync 박자 계산용)
 //
-// 디스플레이에서 받는 것:
-//   - 좌우 독립 딜레이 타임(ms) + 노트분할(템포 sync), 오프셋, 스핀
-//   - 글로벌: BPM, Sync, Tap, Spin Crossfeed, Pitch Pre-Spin, Delay Blur
-//   - 링크 토글(LinkSpin/LinkOffset/LinkEq), 좌우 EQ(미드 파라메트릭)
-//   - 피드백(반복) — 패널엔 안 보이지만 딜레이 필수라 포함
+// 동작:
+//   BpmSync off → LeftTimeMs/RightTimeMs(ms) 직접 사용.
+//   BpmSync on  → LeftDiv/RightDiv(노트분할) + TempoBpm 으로 딜레이타임 계산.
+//   Link on     → 우 채널 시간을 좌 채널 값으로 강제.
+//   HighCut/LowCut → 피드백(반복음) 경로에 적용 → 반복할수록 어두워짐.
+//   PingPong    → 좌우 딜레이가 서로 교차 피드백되어 좌→우→좌 바운스.
+// ───────────────────────────────────────────────────────────────────────────
 #pragma once
 #include "../Effect.h"
+#include "../Dsp.h"
 
 namespace fx {
 
 class Delay : public Effect {
 public:
+    enum class Mode : int { Normal = 0, PingPong = 1 };
+
     enum class Param : int {
-        // ---- 글로벌 ----
-        TempoBpm        = 0,   // 20 .. 300
-        SyncEnable      = 1,   // 0/1  켜지면 노트분할 기반으로 딜레이타임 계산
-        SpinCrossfeed   = 2,   // 0/1
-        PitchPreSpin    = 3,   // 0/1
-        DelayBlur       = 4,   // 0.0 .. 1.0  (반복음 번짐/디퓨전)
-        LinkSpin        = 5,   // 0/1  좌우 스핀 링크
-        LinkOffset      = 6,   // 0/1
-        LinkEq          = 7,   // 0/1
-        // ---- LEFT ----
-        LeftDelayMs     = 10,  // 0 .. 4000 (sync off 일 때 직접값)
-        LeftNoteDiv     = 11,  // 0..6 (1/1,1/2,1/4,1/8,1/16,dot,triplet) — sync on
-        LeftOffsetMs    = 12,  // -50 .. +50
-        LeftSpin        = 13,  // -inf..0 dB 또는 0..1 (모듈레이션 양)
-        LeftFeedback    = 14,  // 0.0 .. ~1.1 (자기발진 주의)
-        LeftEqEnable    = 15,  // 0/1
-        LeftEqMidFreqHz = 16,  // 200 .. 8000
-        LeftEqGainDb    = 17,  // -15 .. +15
-        LeftEqQ         = 18,  // 0.3 .. 4.0
-        // ---- RIGHT ----
-        RightDelayMs     = 20,
-        RightNoteDiv     = 21,
-        RightOffsetMs    = 22,
-        RightSpin        = 23,
-        RightFeedback    = 24,
-        RightEqEnable    = 25,
-        RightEqMidFreqHz = 26,
-        RightEqGainDb    = 27,
-        RightEqQ         = 28,
+        Gain        = 0,   // -inf..+12 dB
+        Out         = 1,   // -inf..+12 dB
+        Feedback    = 2,   // 0..~0.98 (반복량)
+        TempoBpm    = 3,   // 20..300
+        BpmSync     = 4,   // 0/1
+        Link        = 5,   // 0/1  좌우 시간 동일
+        Mode        = 6,   // 0=Normal, 1=PingPong
+        HighCut     = 7,   // 1000..20000 Hz  피드백 LP
+        LowCut      = 8,   // 20..2000 Hz     피드백 HP
+        Mix         = 9,   // 0(dry)..1(wet)
+        LeftTimeMs  = 10,  // 1..4000 (sync off)
+        LeftDiv     = 11,  // 0..6 노트분할 (sync on)
+        RightTimeMs = 12,
+        RightDiv    = 13,
         NumParams
     };
-
-    // 노트 분할 종류 (LeftNoteDiv/RightNoteDiv 값 매핑)
-    enum class NoteDiv : int { Whole=0, Half=1, Quarter=2, Eighth=3, Sixteenth=4, Dotted=5, Triplet=6 };
 
     bool setup(float sampleRate, unsigned int maxBlockSize) override;
     void process(float* left, float* right, unsigned int numFrames) override;
@@ -55,35 +48,25 @@ public:
     void cleanup() override;
 
 private:
-    // 한 채널 분량의 상태를 묶어둠 (좌/우 각각)
     struct Channel {
-        SmoothedValue delaySamples; // 현재 딜레이 길이(샘플) — 스무딩해서 글리치 방지
-        float offsetMs   = 0.0f;
-        float spin       = 0.0f;
-        float feedback   = 0.3f;
-        bool  eqEnabled  = false;
-        float eqFreqHz   = 1000.0f;
-        float eqGainDb   = 0.0f;
-        float eqQ        = 0.7f;
-        NoteDiv noteDiv  = NoteDiv::Quarter;
-        // TODO: 딜레이 링버퍼, 분수지연 보간(allpass/linear), 스핀용 LFO, 미드 EQ 바이쿼드
+        dsp::DelayLine line;
+        dsp::OnePole   fbLowCut;   // 피드백 경로 HP (LowCut)
+        dsp::OnePole   fbHighCut;  // 피드백 경로 LP (HighCut)
+        SmoothedValue  delaySamples;
+        float  timeMs = 333.0f;
+        int    noteDiv = 2;        // 기본 1/4
     };
     Channel left_, right_;
 
-    float tempoBpm_     = 120.0f;
-    bool  syncEnabled_  = false;
-    bool  spinCrossfeed_= false;
-    bool  pitchPreSpin_ = false;
-    float delayBlur_    = 0.0f;
-    bool  linkSpin_=false, linkOffset_=false, linkEq_=false;
+    SmoothedValue inGain_, outGain_, mix_;
+    float feedback_  = 0.35f;
+    float tempoBpm_  = 120.0f;
+    bool  bpmSync_   = false;
+    bool  link_      = false;
+    Mode  mode_      = Mode::Normal;
 
-    // TODO(구현자):
-    //  - syncEnabled 면 (tempoBpm, noteDiv, offset) 로 딜레이 샘플수 계산해 delaySamples.setTarget
-    //  - process: 좌우 링버퍼 read/write, feedback, spin(LFO로 read위치 흔들기), blur(디퓨전),
-    //    crossfeed(좌피드백을 우로/우를 좌로), pitchPreSpin(스핀 전 피치시프트), 좌우 EQ 적용
-    //  - link* 가 켜지면 우 채널 해당 파라미터를 좌값으로 강제
-    void applyLink(); // TODO: 링크 반영 헬퍼
     float msToSamples(float ms) const { return ms * 0.001f * sampleRate_; }
+    void  recalcTimes();   // sync/link/tempo 반영해 좌우 delaySamples 목표 갱신
 };
 
 } // namespace fx

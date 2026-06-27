@@ -10,6 +10,7 @@ bool SynthEngine::setup(float sampleRate, unsigned int maxBlockSize) {
 
     lfo_.setup(sampleRate);
     lfo_.setRate(params_.lfoRateHz());
+    lfo_.setDelay(params_.lfoDelaySec());   // [이은제 추가] LFO 페이드인
 
     masterSmooth_.setup(sampleRate, 20.0f);    // 20ms 램프
     masterSmooth_.snap(params_.masterVolume());
@@ -42,6 +43,7 @@ void SynthEngine::applyPerformance(const hw::TrillFrame& f) {
             // strength(터치 면적)가 들어오면 벨로시티로, 없으면(0) 풀 볼륨.
             const float vel = (b.strength > 0.01f) ? (0.3f + 0.7f * b.strength) : 1.0f;
             voices_[i].gateOn(vel, params_, /*isBass=*/(i == syn::Bass));
+            lfo_.retrigger();   // [이은제 추가] 새 음마다 LFO 페이드인 0부터 다시 시작
         } else if (!b.active && barWasActive_[i]) {
             voices_[i].gateOff();   // 하강엣지: 릴리즈
         }
@@ -80,7 +82,8 @@ void SynthEngine::setParameter(int controlId, float value) {
 
     using hw::ControlId;
     switch (static_cast<ControlId>(controlId)) {
-        case ControlId::LfoRate: lfo_.setRate(params_.lfoRateHz()); break;
+        case ControlId::LfoRate:  lfo_.setRate(params_.lfoRateHz());   break;
+        case ControlId::LfoDelay: lfo_.setDelay(params_.lfoDelaySec()); break; // [이은제 추가]
         // 컷오프/레조넌스/엔벨로프/파형 등은 보이스가 매 샘플 params_ 에서 직접 읽으므로
         // 여기서 별도 push 불필요.
         default: break;

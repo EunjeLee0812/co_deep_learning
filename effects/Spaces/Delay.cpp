@@ -1,5 +1,5 @@
 // Delay.cpp — 스테레오 딜레이 구현
-#include "Spaces/Delay.h"
+#include "Delay.h"
 
 namespace fx {
 

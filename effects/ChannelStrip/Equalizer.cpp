@@ -1,5 +1,5 @@
 // Equalizer.cpp — 채널스트립 EQ 구현
-#include "ChannelStrip/Equalizer.h"
+#include "Equalizer.h"
 
 namespace fx {
 

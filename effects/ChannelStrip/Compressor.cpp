@@ -1,5 +1,5 @@
 // Compressor.cpp — 피크검출 피드포워드 컴프레서 (소프트니, 스테레오 링크, 사이드체인)
-#include "ChannelStrip/Compressor.h"
+#include "Compressor.h"
 
 namespace fx {
 

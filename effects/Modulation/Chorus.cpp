@@ -1,5 +1,5 @@
 // Chorus.cpp — 2보이스 코러스 구현
-#include "Modulation/Chorus.h"
+#include "Chorus.h"
 
 namespace fx {
 

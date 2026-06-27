@@ -1,5 +1,5 @@
 // Phaser.cpp — N단 allpass 페이저 구현
-#include "Modulation/Phaser.h"
+#include "Phaser.h"
 
 namespace fx {
 

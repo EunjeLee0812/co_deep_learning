@@ -11,21 +11,29 @@ namespace hw {
 // ===========================================================================
 const HardwareInput::PotMap HardwareInput::kPots[] = {
     // id                      analogIn  muxCh
-    { ControlId::LfoRate,        0, 0 },
-    { ControlId::LfoDelay,       0, 1 },
-    { ControlId::DcoLfo,         0, 2 },
-    { ControlId::DcoPwm,         0, 3 },
-    { ControlId::DcoSub,         0, 4 },
-    { ControlId::DcoNoise,       0, 5 },
-    { ControlId::LpfFreq,        0, 6 },
-    { ControlId::LpfRes,         0, 7 },
-    { ControlId::LpfEnv,         0, 8 },
-    { ControlId::LpfLfo,         0, 9 },
-    { ControlId::LpfTrack,       0, 10 },
-    { ControlId::Volume,         0, 11 },
-    { ControlId::PitchDco,       0, 12 },
-    { ControlId::PitchLfo,       0, 13 },
-    { ControlId::ModLfo,         0, 14 },
+    // ───── 이은제 재매핑 (2026) : 물리 노브 배치에 맞춰 ControlId 재배정 ─────
+    //   mux채널 = 물리 가변저항/페이더 번호.  analogIn 은 전부 0 (mux SIG → A0).
+    { ControlId::Volume,         0, 0 },   // 가변저항 0  : 마스터 볼륨
+    { ControlId::LpfFreq,        0, 1 },   // 가변저항 1  : LPF 컷오프
+    { ControlId::LpfRes,         0, 2 },   // 가변저항 2  : LPF 레조넌스
+    { ControlId::LpfEnv,         0, 3 },   // 가변저항 3  : LPF env amount
+    { ControlId::LpfLfo,         0, 4 },   // 가변저항 4  : LPF lfo amount
+    { ControlId::LpfTrack,       0, 5 },   // 가변저항 5  : LPF 키트래킹 (피치 따라 컷오프)
+    { ControlId::LfoRate,        0, 6 },   // 가변저항 6  : LFO rate
+    { ControlId::LfoDelay,       0, 7 },   // 가변저항 7  : LFO delay (페이드인)
+    { ControlId::DcoLfo,         0, 8 },   // 가변저항 8  : DCO LFO level (비브라토 깊이)
+    { ControlId::DcoSub,         0, 9 },   // 가변저항 9  : DCO sub level
+    { ControlId::DcoPwm,         0, 10 },  // 가변저항 10 : DCO PWM (LFO로 펄스폭 변조)
+    { ControlId::EnvA,           0, 11 },  // 페이더 11   : Env Attack
+    { ControlId::EnvD,           0, 12 },  // 페이더 12   : Env Decay
+    { ControlId::EnvS,           0, 13 },  // 페이더 13   : Env Sustain
+    { ControlId::EnvR,           0, 14 },  // 페이더 14   : Env Release
+
+    // ───── [폐기] 구버전 매핑 (피치휠/모드휠 — 우리 악기엔 해당 컨트롤 없음) ─────
+    // { ControlId::PitchDco,    0, 12 },  // 피치휠→DCO  : 우리 악기에 피치휠 없음. 폐기.
+    // { ControlId::PitchLfo,    0, 13 },  // 피치휠→LFO  : 동일 사유 폐기.
+    // { ControlId::ModLfo,      0, 14 },  // 모드휠→LFO  : 모드휠 없음. 폐기.
+    // { ControlId::DcoNoise,    0,  5 },  // 노이즈 레벨 : 이번 매핑에선 미사용.
     //{ ControlId::GlideTime,      0, 15 }, // 사용중인 MUX는 15채널까지밖에 없음. (근데 0~14만 사용중이라 얘는 주석처리함)
 
     //{ ControlId::EnvA,           4, 0 }, // 4.0  여기부터는 폐기?해야할듯?

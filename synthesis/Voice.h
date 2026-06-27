@@ -58,7 +58,11 @@ public:
     //   isBass=true 면 서브 오실레이터를 섞어 저음을 두껍게(베이스 바 전용).
     void gateOn(float velocity, const SynthParams& p, bool isBass) {
         velocity_   = velocity;
-        hasSub_     = isBass;
+        // [이은제 수정] sub level 노브로 모든 바에서 서브 오실레이터 사용 가능하게.
+        //   (구버전은 isBass(=Bass 바)일 때만 sub. 지금은 R5 바만 써서 안 들렸음)
+        //   isBass 인자는 호환 위해 남겨두되 사용하지 않음.
+        (void)isBass;
+        hasSub_     = true;
         centerMidi_ = centerTarget_;   // 스냅
         env_.setAttack(p.envAttack());
         env_.setDecay(p.envDecay());
@@ -79,24 +83,43 @@ public:
 
         // ── 피치: center 만 글라이드, offset 은 즉각 ──
         centerMidi_ += (centerTarget_ - centerMidi_) * glideAlpha_;
-        const float hz = midiToHz(centerMidi_ + offset_);
+        const float noteMidi = centerMidi_ + offset_;    // 현재 실제 음높이(MIDI)
+
+        // [이은제 추가] DCO LFO: LFO 로 피치를 흔드는 비브라토.
+        //   깊이 1.0 에서 약 ±0.5반음(50센트). lfoVal 은 -1..1.
+        const float kVibratoSemis = 0.5f;
+        const float vibrato = p.dcoLfoAmount() * lfoVal * kVibratoSemis;
+        const float hz = midiToHz(noteMidi + vibrato);
         osc_.setFrequency(hz);
         oscDetune_.setFrequency(hz * 1.004f);   // 약 +7센트 디튠(두께)
 
+        // [이은제 추가] DCO PWM: LFO 로 사각파 펄스폭을 흔든다.
+        //   기본 0.5(정사각) 기준 깊이 1.0 에서 약 ±0.4 까지. (0.1~0.9 클램프)
+        float pw = 0.5f + p.dcoPwmAmount() * lfoVal * 0.4f;
+        if (pw < 0.1f) pw = 0.1f; else if (pw > 0.9f) pw = 0.9f;
+
         // ── 오실레이터 믹스 (saw/square 토글, 둘 다 꺼지면 saw 폴백) ──
         float osc = 0.0f; bool any = false;
-        if (p.sawOn())    { osc += osc_.processSaw();        any = true; }
-        if (p.squareOn()) { osc += osc_.processSquare(0.5f); any = true; }
+        if (p.sawOn())    { osc += osc_.processSaw();      any = true; }
+        if (p.squareOn()) { osc += osc_.processSquare(pw); any = true; }  // [이은제 수정] pw 적용
         if (!any)         { osc += osc_.processSaw(); }
         else              { osc *= 0.5f; }               // 동시 출력 헤드룸
         if (p.unison())   osc = 0.7f * osc + 0.5f * oscDetune_.processSaw();
-        if (hasSub_)      osc += p.subLevel() * osc_.processSub();   // 베이스 보강
+        if (hasSub_)      osc += p.subLevel() * osc_.processSub();   // 저음 보강(sub level 노브)
 
         // ── 필터 컷오프 모듈레이션 (옥타브/로그 도메인) ──
         const float env = env_.process();                // 0..1
         const float kEnvOct = 4.0f, kLfoOct = 2.0f;
+
+        // [이은제 추가] LPF Track(키트래킹): 음이 높을수록 컷오프도 따라 올라간다.
+        //   기준음 C3(MIDI 48) 대비 한 옥타브(12반음)마다 track 비율만큼 컷오프 1옥타브 이동.
+        //   amount 1.0 = 완전 추종(음과 동일하게), 0 = 추종 없음.
+        const float kTrackRefMidi = 48.0f;               // C3 기준
+        const float trackOct = p.lpfTrackAmount() * (noteMidi - kTrackRefMidi) / 12.0f;
+
         const float mod = p.lpfEnvAmount() * env * kEnvOct
-                        + p.lpfLfoAmount() * lfoVal * kLfoOct;
+                        + p.lpfLfoAmount() * lfoVal * kLfoOct
+                        + trackOct;                      // [이은제 추가] 키트래킹 합산
         filter_.setCutoff(p.lpfCutoffHz() * std::pow(2.0f, mod));
         filter_.setResonance(p.lpfResonance());
         const float y = filter_.processLP(osc);

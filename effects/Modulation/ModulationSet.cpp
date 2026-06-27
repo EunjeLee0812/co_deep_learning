@@ -1,5 +1,5 @@
 // ModulationSet.cpp — 모듈레이션 세트 구현
-#include "Modulation/ModulationSet.h"
+#include "ModulationSet.h"
 
 namespace fx {
 

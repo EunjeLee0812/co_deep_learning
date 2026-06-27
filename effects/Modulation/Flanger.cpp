@@ -1,5 +1,5 @@
 // Flanger.cpp — 변조 딜레이 플랜저 구현
-#include "Modulation/Flanger.h"
+#include "Flanger.h"
 
 namespace fx {
 

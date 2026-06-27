@@ -1,5 +1,5 @@
 // ChannelStrip.cpp — EQ + 컴프 + Gain/Out 묶음
-#include "ChannelStrip/ChannelStrip.h"
+#include "ChannelStrip.h"
 
 namespace fx {
 

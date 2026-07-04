@@ -13,21 +13,24 @@ const HardwareInput::PotMap HardwareInput::kPots[] = {
     // id                      analogIn  muxCh
     // ───── 이은제 재매핑 (2026) : 물리 노브 배치에 맞춰 ControlId 재배정 ─────
     //   mux채널 = 물리 가변저항/페이더 번호.  analogIn 은 전부 0 (mux SIG → A0).
-    { ControlId::Volume,         0, 0 },   // 가변저항 0  : 마스터 볼륨
-    { ControlId::LpfFreq,        0, 1 },   // 가변저항 1  : LPF 컷오프
-    { ControlId::LpfRes,         0, 2 },   // 가변저항 2  : LPF 레조넌스
-    { ControlId::LpfEnv,         0, 3 },   // 가변저항 3  : LPF env amount
-    { ControlId::LpfLfo,         0, 4 },   // 가변저항 4  : LPF lfo amount
-    { ControlId::LpfTrack,       0, 5 },   // 가변저항 5  : LPF 키트래킹 (피치 따라 컷오프)
-    { ControlId::LfoRate,        0, 6 },   // 가변저항 6  : LFO rate
-    { ControlId::LfoDelay,       0, 7 },   // 가변저항 7  : LFO delay (페이드인)
-    { ControlId::DcoLfo,         0, 8 },   // 가변저항 8  : DCO LFO level (비브라토 깊이)
-    { ControlId::DcoSub,         0, 9 },   // 가변저항 9  : DCO sub level
-    { ControlId::DcoPwm,         0, 10 },  // 가변저항 10 : DCO PWM (LFO로 펄스폭 변조)
-    { ControlId::EnvA,           0, 11 },  // 페이더 11   : Env Attack
-    { ControlId::EnvD,           0, 12 },  // 페이더 12   : Env Decay
-    { ControlId::EnvS,           0, 13 },  // 페이더 13   : Env Sustain
-    { ControlId::EnvR,           0, 14 },  // 페이더 14   : Env Release
+    // ───── 이은제 재매핑 v2 (2026) : 물리 노브 순서를 아래로 재배정 ─────
+    //   muxCh(=물리 가변저항 번호)는 그대로 두고 ControlId 만 옮겼다.
+    //   물리 0~10 순서 : LFO rate/delay → DCO lfo/sub/pwm → LPF freq/res/env/lfo/track → Volume
+    { ControlId::LfoRate,        0, 0 },   // 가변저항 0  : LFO rate
+    { ControlId::LfoDelay,       0, 1 },   // 가변저항 1  : LFO delay (페이드인)
+    { ControlId::DcoLfo,         0, 2 },   // 가변저항 2  : DCO LFO level (비브라토 깊이)
+    { ControlId::DcoSub,         0, 3 },   // 가변저항 3  : DCO sub level
+    { ControlId::DcoPwm,         0, 4 },   // 가변저항 4  : DCO PWM (LFO로 펄스폭 변조)
+    { ControlId::LpfFreq,        0, 5 },   // 가변저항 5  : LPF 컷오프
+    { ControlId::LpfRes,         0, 6 },   // 가변저항 6  : LPF 레조넌스
+    { ControlId::LpfEnv,         0, 7 },   // 가변저항 7  : LPF env amount
+    { ControlId::LpfLfo,         0, 8 },   // 가변저항 8  : LPF lfo amount
+    { ControlId::LpfTrack,       0, 9 },   // 가변저항 9  : LPF 키트래킹 (피치 따라 컷오프)
+    { ControlId::Volume,         0, 10 },  // 가변저항 10 : 마스터 볼륨
+    { ControlId::EnvA,           0, 11 },  // 페이더 11   : Env Attack  (유지)
+    { ControlId::EnvD,           0, 12 },  // 페이더 12   : Env Decay   (유지)
+    { ControlId::EnvS,           0, 13 },  // 페이더 13   : Env Sustain (유지)
+    { ControlId::EnvR,           0, 14 },  // 페이더 14   : Env Release (유지)
 
     // ───── [폐기] 구버전 매핑 (피치휠/모드휠 — 우리 악기엔 해당 컨트롤 없음) ─────
     // { ControlId::PitchDco,    0, 12 },  // 피치휠→DCO  : 우리 악기에 피치휠 없음. 폐기.

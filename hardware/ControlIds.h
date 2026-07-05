@@ -46,6 +46,14 @@ enum class ControlId : int {
     Voicing,        // POLY1 / POLY2 / UNISON (3 포지션)
     VcaShape,       // VCA: ENV / GATE       (2 포지션)
 
+    // ───── [이은제 2026] 물리 똑딱이 스위치 5개 (D4/D5/D6/D10/D11) ─────
+    //   전부 2포지션(on/off). 배선은 HardwareInput.cpp 의 kSwitches[] 참조.
+    WaveSelect,     // 파형 선택: 0=Saw / 1=Square   (기존 사각/톱니 개별토글 대체)
+    QuantizeScale,  // Trill 연속피치 → 루트 장음계(도레미파솔라시도) 퀀타이즈 on/off
+    LfoEnable,      // 공유 LFO(비브라토/PWM/필터) 전체 on/off
+    OctaveUp,       // 전 보이스 한 옥타브(+12) 위로 시프트 on/off
+    SwitchSpare,    // [예비] 물리적으로만 연결. 아직 기능 없음(추후 배정용)
+
     Count
 };
 

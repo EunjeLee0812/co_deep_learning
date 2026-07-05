@@ -35,6 +35,12 @@ static const ControlSpec kSpecs[] = {
     { ControlId::LpfEnvPolarity,  0.0f,   1.0f, Curve::Linear,  0, true,  2, "Env Polarity"   },
     { ControlId::Voicing,         0.0f,   2.0f, Curve::Linear,  0, true,  3, "Voicing"        },
     { ControlId::VcaShape,        0.0f,   1.0f, Curve::Linear,  0, true,  2, "VCA Shape"      },
+    // ----- [이은제 2026] 추가 스위치 5개 (전부 2포지션) -----
+    { ControlId::WaveSelect,      0.0f,   1.0f, Curve::Linear,  0, true,  2, "Wave Select"    }, // 0=Saw 1=Square
+    { ControlId::QuantizeScale,   0.0f,   1.0f, Curve::Linear,  0, true,  2, "Scale Quantize" },
+    { ControlId::LfoEnable,       0.0f,   1.0f, Curve::Linear,  0, true,  2, "LFO Enable"     },
+    { ControlId::OctaveUp,        0.0f,   1.0f, Curve::Linear,  0, true,  2, "Octave +1"      },
+    { ControlId::SwitchSpare,     0.0f,   1.0f, Curve::Linear,  0, true,  2, "Spare"          },
 };
 
 static_assert(sizeof(kSpecs)/sizeof(kSpecs[0]) == static_cast<int>(ControlId::Count),

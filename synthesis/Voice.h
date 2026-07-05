@@ -54,6 +54,10 @@ public:
     void setTargetCenter(float centerMidi) { centerTarget_ = centerMidi; }
     void setOffset(float semitones)        { offset_       = semitones; }
 
+    // [이은제 2026] 음계 퀀타이즈 설정. 엔진이 매 블록 현재 루트와 함께 전달.
+    //   on=true 면 최종 음을 rootPc 장음계 톤으로 스냅한다.
+    void setQuantize(bool on, int rootPc) { quantizeOn_ = on; quantizeRootPc_ = rootPc; }
+
     // 게이트 온: 현재 기준음을 목표로 스냅(첫 터치 시 미끄러짐 없이 바로) + ADSR.
     //   isBass=true 면 서브 오실레이터를 섞어 저음을 두껍게(베이스 바 전용).
     void gateOn(float velocity, const SynthParams& p, bool isBass) {
@@ -83,7 +87,12 @@ public:
 
         // ── 피치: center 만 글라이드, offset 은 즉각 ──
         centerMidi_ += (centerTarget_ - centerMidi_) * glideAlpha_;
-        const float noteMidi = centerMidi_ + offset_;    // 현재 실제 음높이(MIDI)
+        float noteMidi = centerMidi_ + offset_;          // 현재 실제 음높이(MIDI)
+
+        // [이은제 2026] 음계 퀀타이즈: 켜지면 연속피치를 장음계 톤으로 스냅.
+        //   vibrato 적용 '전'에 스냅해야, 스냅된 음을 중심으로 비브라토가 걸린다.
+        //   (기준음 4개가 모두 루트의 장음계 톤이라, offset=0 이면 원음 그대로 유지)
+        if (quantizeOn_) noteMidi = quantizeToMajorScale(noteMidi, quantizeRootPc_);
 
         // [이은제 추가] DCO LFO: LFO 로 피치를 흔드는 비브라토.
         //   깊이 1.0 에서 약 ±0.5반음(50센트). lfoVal 은 -1..1.
@@ -140,6 +149,9 @@ private:
     float velocity_    = 1.0f;
     bool  active_      = false;
     bool  hasSub_      = false;
+    // [이은제 2026] 음계 퀀타이즈 상태 (엔진이 매 블록 setQuantize 로 갱신)
+    bool  quantizeOn_     = false;
+    int   quantizeRootPc_ = 0;
 };
 
 } // namespace syn

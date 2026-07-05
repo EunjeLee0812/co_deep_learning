@@ -49,14 +49,21 @@ const HardwareInput::PotMap HardwareInput::kPots[] = {
 // 스위치 → 디지털 핀. 3포지션은 핀 2개로 디코딩.
 // 주의: 디지털 핀은 0/3.3V! 5V 인가 금지. 스위치 한쪽은 GND, 다른쪽은 3.3V + 풀다운 권장.
 const HardwareInput::SwitchMap HardwareInput::kSwitches[] = {
+    // ───── [이은제 2026] 물리 똑딱이 스위치 5개 ─────────────────────────
+    //   id                     pins   numPins
+    //   1핀 = 2포지션. digitalRead==1(HIGH,3.3V)→pos1, ==0(LOW,GND)→pos0.
+    //   배선: 스위치 공통 GND, 다른쪽 3.3V + 풀다운(10k) 권장. 5V 인가 금지!
+    //   ★ 기능↔핀을 바꾸려면 아래 핀 번호만 교체하면 됨. 코드 수정 불필요.
+    { ControlId::WaveSelect,     {4,  0}, 1 }, // D4 : Saw(0) / Square(1)
+    { ControlId::QuantizeScale,  {5,  0}, 1 }, // D5 : 음계 퀀타이즈 off(0)/on(1)
+    { ControlId::LfoEnable,      {6,  0}, 1 }, // D6 : LFO off(0)/on(1)
+    { ControlId::OctaveUp,       {10, 0}, 1 }, // D10: 옥타브 시프트 off(0)/on(1)
+    { ControlId::SwitchSpare,    {11, 0}, 1 }, // D11: [예비] 연결만, 기능 없음
+
+    // ───── [폐기] 구 Model84 스위치 매핑 (참고용, 우리 악기 미사용) ─────
     //{ ControlId::DcoRange,       {8, 1}, 1 }, // 16'/8'/4'  (D8)
     //{ ControlId::DcoPwmSource,   {9, 0}, 1 }, // LFO/MAN     (D9)
-    //{ ControlId::DcoWaveSquare,  {10, 0}, 1 }, // square on/off(D10)
-    //{ ControlId::DcoWaveSaw,     {11, 0}, 1 }, // saw on/off  (D11)
     //{ ControlId::LpfEnvPolarity, {12, 0}, 1 }, // +/-         (D12)
-
-    //{ ControlId::Voicing,        {6, 7}, 2 }, // POLY1/2/UNI (D6,D7) 폐기?
-    //{ ControlId::VcaShape,       {8, 0}, 1 }, // ENV/GATE    (D8)    폐기?
 };
 
 const int HardwareInput::kNumPots     = sizeof(kPots)/sizeof(kPots[0]);

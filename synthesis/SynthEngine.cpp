@@ -30,13 +30,21 @@ void SynthEngine::applyPerformance(const hw::TrillFrame& f) {
 
     // ── 2) 4개 바 → 4개 보이스 (연속 피치 + 게이트) ──
     const hw::BarTouch* bars[syn::kNumBarVoices] = { &f.bass, &f.r5, &f.r8, &f.r3 };
+
+    // [이은제 2026] OctaveUp 스위치: 켜지면 전 보이스 기준음을 +12(한 옥타브) 올림.
+    //   center 에 더하므로 글라이드가 걸려 부드럽게 올라간다. offset(바 위치)은 그대로.
+    const int octaveShift = params_.octaveUp() ? 12 : 0;
+    // [이은제 2026] QuantizeScale 스위치 상태를 현재 루트와 함께 각 보이스에 전달.
+    const bool quantize = params_.quantizeOn();
+
     for (int i = 0; i < syn::kNumBarVoices; ++i) {
         const hw::BarTouch& b = *bars[i];
 
         // 기준음(center)은 항상 갱신 → 터치 중 루트가 바뀌면 글라이드로 미끄러진다.
         // 바 오프셋(offset)은 즉각 → 바를 따라 바이올린처럼 연속/등간격으로 변한다.
-        voices_[i].setTargetCenter(static_cast<float>(syn::voiceCenterMidi(rootPc_, i)));
+        voices_[i].setTargetCenter(static_cast<float>(syn::voiceCenterMidi(rootPc_, i) + octaveShift));
         voices_[i].setOffset(syn::barPosToOffsetSemis(b.pos));
+        voices_[i].setQuantize(quantize, rootPc_);   // [이은제 2026] 음계 퀀타이즈
 
         if (b.active && !barWasActive_[i]) {
             // 상승엣지: 게이트 온 (베이스 바에만 서브 오실레이터)
@@ -53,8 +61,13 @@ void SynthEngine::applyPerformance(const hw::TrillFrame& f) {
 
 void SynthEngine::render(float* outLeft, float* outRight, unsigned int numFrames) {
     // ── 1) 보이스 합산 (모노 믹스) ──
+    // [이은제 2026] LfoEnable 스위치: off 면 lfoVal 을 0으로 게이팅한다.
+    //   → 비브라토·PWM·필터LFO 가 한 번에 모두 정지. phase 는 계속 돌려(process 호출)
+    //     다시 켤 때 위상 점프 없이 매끄럽게 이어지도록 한다.
+    const bool lfoOn = params_.lfoEnabled();
     for (unsigned int n = 0; n < numFrames; ++n) {
-        const float lfoVal = lfo_.process();          // 공유 LFO (-1..1)
+        float lfoVal = lfo_.process();                // 공유 LFO (-1..1)
+        if (!lfoOn) lfoVal = 0.0f;                     // LFO off → 모듈레이션 정지
         float mix = 0.0f;
         for (auto& v : voices_)
             if (v.isActive()) mix += v.process(params_, lfoVal);

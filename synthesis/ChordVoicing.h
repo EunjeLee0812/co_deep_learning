@@ -93,4 +93,33 @@ inline float barPosToOffsetSemis(float pos) {
     return (pos - 0.5f) * kBarSemitoneSpan;
 }
 
+// ── [이은제 2026] 장음계(도레미파솔라시도) 퀀타이즈 ─────────────────────────
+//   QuantizeScale 스위치가 켜지면, 바에서 나온 연속 피치를 "현재 루트의 장음계"
+//   음으로 스냅한다. (루트=링에서 고른 코드 루트 rootPc)
+//
+//   pc(피치클래스)가 rootPc 기준 장음계 도수인지 판정.
+//   장음계 도수(반음): 0(도) 2(레) 4(미) 5(파) 7(솔) 9(라) 11(시).
+inline bool isMajorScaleTone(int pc, int rootPc) {
+    const int deg = ((pc - rootPc) % 12 + 12) % 12;
+    return deg==0 || deg==2 || deg==4 || deg==5 || deg==7 || deg==9 || deg==11;
+}
+
+//   연속 MIDI 음(float) → 가장 가까운 장음계 음(정수 MIDI)로 스냅.
+//   후보 범위를 floor-1..ceil+1 로 잡아 위/아래 중 실제로 더 가까운 톤을 고른다.
+//   (RT-safe: 짧은 정수 루프, 할당·분기예외 없음)
+inline float quantizeToMajorScale(float midi, int rootPc) {
+    const int lo = static_cast<int>(std::floor(midi)) - 1;
+    const int hi = static_cast<int>(std::ceil (midi)) + 1;
+    float best = midi, bestDist = 1e9f;
+    bool  found = false;
+    for (int m = lo; m <= hi; ++m) {
+        const int pc = ((m % 12) + 12) % 12;
+        if (isMajorScaleTone(pc, rootPc)) {
+            const float d = std::fabs(midi - static_cast<float>(m));
+            if (d < bestDist) { bestDist = d; best = static_cast<float>(m); found = true; }
+        }
+    }
+    return found ? best : midi;
+}
+
 } // namespace syn

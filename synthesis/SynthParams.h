@@ -43,9 +43,20 @@ public:
             case ControlId::EnvD:     envD_        = value; break; // s
             case ControlId::EnvS:     envS_        = value; break; // 0..1
             case ControlId::EnvR:     envR_        = value; break; // s
-            // ---- 파형 토글(나중에 디지털 입력 붙이면 사용) ----
+            // ---- 파형 토글(구: 개별 on/off. 지금은 WaveSelect 스위치가 대체) ----
             case ControlId::DcoWaveSaw:    sawOn_    = (value > 0.5f); break;
             case ControlId::DcoWaveSquare: squareOn_ = (value > 0.5f); break;
+
+            // ---- [이은제 2026] 물리 스위치 5개 ----
+            // 파형 선택 1개 스위치: 0=Saw, 1=Square (둘 중 하나만 켜짐)
+            case ControlId::WaveSelect:
+                if (value > 0.5f) { sawOn_ = false; squareOn_ = true;  } // Square
+                else              { sawOn_ = true;  squareOn_ = false; } // Saw
+                break;
+            case ControlId::QuantizeScale: quantizeOn_ = (value > 0.5f); break; // 음계 퀀타이즈
+            case ControlId::LfoEnable:     lfoEnabled_ = (value > 0.5f); break; // LFO on/off
+            case ControlId::OctaveUp:      octaveUp_   = (value > 0.5f); break; // 옥타브 +1
+            // ControlId::SwitchSpare 는 예비 → 여기서 처리 안 함(default 로 무시)
 
             // ───── [폐기] 우리 악기에 없는 컨트롤 (피치휠/모드휠/유니즌 등) ─────
             // case ControlId::PitchDco:  ... 폐기 (피치휠 없음)
@@ -75,6 +86,10 @@ public:
     bool  sawOn()          const { return sawOn_; }
     bool  squareOn()       const { return squareOn_; }
     bool  unison()         const { return unison_; }
+    // [이은제 2026] 스위치 상태 getter
+    bool  quantizeOn()     const { return quantizeOn_; }   // 음계 퀀타이즈
+    bool  lfoEnabled()     const { return lfoEnabled_; }   // LFO on/off
+    bool  octaveUp()       const { return octaveUp_; }     // 옥타브 +1
 
 private:
     // 합리적 기본값 (전원 켜자마자 소리 나도록)
@@ -91,6 +106,10 @@ private:
     float masterVol_   = 0.7f;
     float envA_ = 0.01f, envD_ = 0.3f, envS_ = 0.7f, envR_ = 0.4f;
     bool  sawOn_ = true, squareOn_ = false, unison_ = false;
+    // [이은제 2026] 스위치 기본값: 퀀타이즈 off, LFO on, 옥타브 시프트 off
+    bool  quantizeOn_ = false;
+    bool  lfoEnabled_ = true;
+    bool  octaveUp_   = false;
 };
 
 } // namespace syn

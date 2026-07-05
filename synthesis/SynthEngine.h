@@ -10,7 +10,7 @@
 //        링 터치 중이면 루트 갱신(떼면 마지막 루트 래치)
 //        각 바: 가운데 기준음 + (바위치-0.5)*span  → 보이스 setTargetCenter/setOffset
 //                터치 상승엣지=gateOn / 하강엣지=gateOff
-//   매 샘플: 보이스 4개 합산 → (블록 끝) 스테레오 복제 → EffectChain → 마스터볼륨
+//   매 샘플: 보이스 4개 합산 → (블록 끝) 스테레오 복제 → PluginChain(동적 이펙트 체인) → 마스터볼륨
 //
 // 파라미터 입력: 하드웨어 노브/스위치 + 디스플레이 → setParameter(id, value) 로 합류.
 //   (id = hw::ControlId 정수, value = 실제 단위. 매핑은 하드웨어 파트가 끝냄)
@@ -20,7 +20,7 @@
 #include "../core/Types.h"
 #include "../hardware/ParameterSink.h"
 #include "../hardware/TrillInput.h"      // hw::TrillFrame, hw::BarTouch
-#include "../effects/EffectChain.h"
+#include "../effects/PluginChain.h"   // [변경] 동적 체인으로 교체 (구 EffectChain 대체)
 #include "SynthParams.h"
 #include "Voice.h"
 #include "Lfo.h"
@@ -40,9 +40,10 @@ public:
     void setParameter(int controlId, float value) override;
     void setParam(int controlId, float value) { setParameter(controlId, value); } // 별칭
 
-    // 이펙트 체인 파라미터 전달용.
-    void setEffectParameter(int chainParamId, float value) { fx_.setParameter(chainParamId, value); }
-    fx::EffectChain& effects() { return fx_; }
+    // [변경] 동적 이펙트 체인 접근자. 디스플레이 컨트롤러가 이걸 통해 편집한다.
+    //   (구 setEffectParameter(chainParamId, ...) 1000단위 라우팅은 폐기 —
+    //    이제 슬롯이 고정이 아니므로 ChainUiController 가 슬롯/파라미터를 직접 지정)
+    fx::PluginChain& effects() { return fx_; }
 
     void cleanup();
 
@@ -54,7 +55,7 @@ private:
     // 보이스 4개: [0]=Bass [1]=Fifth [2]=Octave [3]=Third  (syn::BarVoice 인덱스와 동일)
     std::array<syn::Voice, syn::kNumBarVoices> voices_;
     syn::Lfo         lfo_;
-    fx::EffectChain  fx_;
+    fx::PluginChain  fx_;              // [변경] 동적 체인
     fx::SmoothedValue masterSmooth_;   // 마스터 볼륨 지퍼노이즈 방지
 
     // ── 연주 상태 ──
